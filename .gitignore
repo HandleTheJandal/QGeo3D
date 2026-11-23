@@ -1,0 +1,8 @@
+__pycache__/
+*.pyc
+dist/
+*.gpkg
+*.gpkg-wal
+*.gpkg-shm
+*.qto3settings
+.idea/
