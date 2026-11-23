@@ -14,7 +14,6 @@ adds the mining tools to it. Qgis2threejs itself is not modified.
 3. Its **3D viewer** button opens the Qgis2threejs window with the QGeo 3D toolbar and panel.
 
 Tested on QGIS 3.44 LTR with Qgis2threejs 2.10, and on QGIS 4.2 with Qgis2threejs 3.3 (see *QGIS 4* below).
-Formerly called QGIS2Three4: settings, saved views and data folders carry over.
 
 ## What it does
 

@@ -3,7 +3,7 @@ name=QGeo 3D
 qgisMinimumVersion=3.34
 qgisMaximumVersion=4.99
 description=Mining 3D for Qgis2threejs: wireframes, block models, drillholes, sections, strings and Micromine / Datamine / Surpac / Vulcan files (companion plugin - needs Qgis2threejs)
-about=QGeo 3D (formerly QGIS2Three4) adds Micromine-style 3D work to the Qgis2threejs 3D window. It needs the Qgis2threejs plugin installed and enabled (tested with Qgis2threejs 2.10 on QGIS 3.44 and Qgis2threejs 3.3 on QGIS 4.4); Qgis2threejs is not modified.
+about=QGeo 3D adds Micromine-style 3D work to the Qgis2threejs 3D window. It needs the Qgis2threejs plugin installed and enabled (tested with Qgis2threejs 2.10 on QGIS 3.44 and Qgis2threejs 3.3 on QGIS 4.4); Qgis2threejs is not modified.
 
  Features: wireframes with triangle edges; block models (colour by grade, filters, air / mined-out rules, grade-tonnage, rotated models, outlines on section); desurveyed drillholes from Micromine .DHDB, Datamine or CSV / Excel tables; vertical section slabs with stepping and clipping; 3D string digitising with snapping and wireframe linking; plan / N / E / S / W views, coordinate grid, scale bar and view coordinate; 3D query.
 
