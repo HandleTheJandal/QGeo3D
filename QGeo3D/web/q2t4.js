@@ -3,7 +3,7 @@
 (function () {
 	"use strict";
 
-	var VERSION = "0.13.26";
+	var VERSION = "0.13.27";
 	if (window.Q2T4 && window.Q2T4.version === VERSION) {
 		window.Q2T4.attach();
 		return;
@@ -1426,13 +1426,19 @@
 		var obj = new THREE.Group();
 		obj.name = "q2t4 overlay " + name;
 
+		// Lines are drawn non-indexed (each segment's two vertices copied out): indexed LINES sharing
+		// the points' position buffer intermittently drew nothing in QtWebKit (QGIS 3 / Qgis2threejs 2.x),
+		// leaving only the vertex dots.
+		var lpos = new Float32Array(seg.length * 3), si, sk;
+		for (si = 0; si < seg.length; si++) for (sk = 0; sk < 3; sk++) lpos[si * 3 + sk] = pos[seg[si] * 3 + sk];
 		var lg = new THREE.BufferGeometry();
-		lg.setAttribute("position", attr);
-		lg.setIndex(new THREE.BufferAttribute(seg, 1));
+		lg.setAttribute("position", new THREE.BufferAttribute(lpos, 3));
 		lg.computeBoundingSphere();
 		var lmat;
 		if (spec.colors) {            // per-vertex colours (block outlines by grade class)
-			lg.setAttribute("color", new THREE.BufferAttribute(new Uint8Array(b64ToBuffer(spec.colors)), 3, true));
+			var vc = new Uint8Array(b64ToBuffer(spec.colors)), lcol = new Uint8Array(seg.length * 3);
+			for (si = 0; si < seg.length; si++) for (sk = 0; sk < 3; sk++) lcol[si * 3 + sk] = vc[seg[si] * 3 + sk];
+			lg.setAttribute("color", new THREE.BufferAttribute(lcol, 3, true));
 			lmat = new THREE.LineBasicMaterial({vertexColors: VCOLORS});
 		} else {
 			lmat = new THREE.LineBasicMaterial({color: spec.color || "#00c8ff"});

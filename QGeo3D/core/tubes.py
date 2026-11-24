@@ -86,9 +86,10 @@ def tube_spec(segments, colours, radius=0.6, sides=6, max_verts=65000):
     return {"offset": [float(x) for x in offset], "chunks": chunks}
 
 
-def layer_intervals(layer, dest_crs=None, field=None, hole_field=None):
+def layer_intervals(layer, dest_crs=None, field=None, hole_field=None, groups=None):
     """[(p0, p1, value, hole)] from a LineStringZ layer (first and last vertex of each feature;
-    multi-vertex traces are split into their segments)."""
+    multi-vertex traces are split into their segments). Pass a list as `groups` to get, for each segment,
+    the number of the feature it came from (an interval that follows a curved hole has several segments)."""
     from qgis.core import QgsCoordinateTransform, QgsProject
     tr = None
     if dest_crs is not None and layer.crs() != dest_crs:
@@ -98,7 +99,9 @@ def layer_intervals(layer, dest_crs=None, field=None, hole_field=None):
         from .tables import guess
         hole_field = guess([(n, "C") for n in names], "hole", numeric=False)
     out = []
+    nf = -1
     for f in layer.getFeatures():
+        nf += 1
         g = f.geometry()
         if g is None or g.isEmpty():
             continue
@@ -112,11 +115,14 @@ def layer_intervals(layer, dest_crs=None, field=None, hole_field=None):
             pts = [(p.x(), p.y(), p.z() if p.is3D() else 0.0) for p in part.vertices()]
             for i in range(len(pts) - 1):
                 out.append((pts[i], pts[i + 1], val, hole))
+                if groups is not None:
+                    groups.append(nf)
     return out, hole_field
 
 
-def label_specs(intervals, field=None, fmt=None, max_grade_labels=4000):
-    """(hole id labels at the top of each hole, grade labels at interval midpoints)."""
+def label_specs(intervals, field=None, fmt=None, max_grade_labels=4000, groups=None):
+    """(hole id labels at the top of each hole, grade labels at interval midpoints). With `groups` (from
+    layer_intervals) the segments of one interval get one label, half way along the interval."""
     tops = {}
     for p0, p1, _v, h in intervals:
         if h is None:
@@ -127,10 +133,27 @@ def label_specs(intervals, field=None, fmt=None, max_grade_labels=4000):
     holes = [{"p": list(p), "text": str(h), "color": "#ffffff"} for h, p in tops.items()]
     grades = []
     if field:
-        for p0, p1, v, _h in intervals:
+        if groups is not None and len(groups) == len(intervals):
+            chains = {}
+            for g, iv in zip(groups, intervals):
+                chains.setdefault(g, []).append(iv)
+            items = []
+            for segs in chains.values():
+                v = segs[0][2]
+                lens = [sum((a - b) ** 2 for a, b in zip(p0, p1)) ** 0.5 for p0, p1, _v, _h in segs]
+                half, run, mid = sum(lens) / 2.0, 0.0, None
+                for (p0, p1, _v, _h), ln in zip(segs, lens):
+                    if run + ln >= half:
+                        t = (half - run) / ln if ln else 0.0
+                        mid = [a + t * (b - a) for a, b in zip(p0, p1)]
+                        break
+                    run += ln
+                items.append((mid or [(a + b) / 2 for a, b in zip(segs[0][0], segs[0][1])], v))
+        else:
+            items = [([(a + b) / 2 for a, b in zip(p0, p1)], v) for p0, p1, v, _h in intervals]
+        for pos, v in items:
             if isinstance(v, (int, float)) and v == v:
-                grades.append({"p": [(a + b) / 2 for a, b in zip(p0, p1)],
-                               "text": (fmt or "{:.2f}").format(v), "color": "#f2c12e"})
+                grades.append({"p": pos, "text": (fmt or "{:.2f}").format(v), "color": "#f2c12e"})
                 if len(grades) >= max_grade_labels:
                     break
     return holes, grades

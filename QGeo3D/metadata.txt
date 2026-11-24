@@ -8,7 +8,7 @@ about=QGeo 3D adds Micromine-style 3D work to the Qgis2threejs 3D window. It nee
  Features: wireframes with triangle edges; block models (colour by grade, filters, air / mined-out rules, grade-tonnage, rotated models, outlines on section); desurveyed drillholes from Micromine .DHDB, Datamine or CSV / Excel tables; vertical section slabs with stepping and clipping; 3D string digitising with snapping and wireframe linking; plan / N / E / S / W views, coordinate grid, scale bar and view coordinate; 3D query.
 
  Reads: Micromine .tridb / .STR / .DAT / .DHDB, Datamine .dm, Vulcan .bmf, Surpac .str / .dtm / .mdl, Leapfrog .msh / block model CSV, OMF, DXF, OBJ, GeoPackage, CSV, Excel. Writes: Micromine .tridb / .STR / .DAT, Datamine .dm, Surpac .str / .dtm, Leapfrog .msh / block model CSV, OMF, DXF, OBJ, CSV. Files without a coordinate system ask for one (changeable afterwards). Drag and drop onto the 3D window, the panel or QGIS.
-version=0.16.0
+version=0.16.1
 author=Jandals
 email=qgeo3d@gmail.com
 repository=https://github.com/QGeo3D-Sean/QGeo3D
@@ -20,7 +20,14 @@ tags=3d,mining,geology,wireframe,block model,drillholes,micromine,datamine,surpa
 experimental=True
 plugin_dependencies=Qgis2threejs
 supportsQt6=True
-changelog=0.16.0
+changelog=0.16.1
+    - Fix: drillhole value labels were repeated along intervals that follow a curved hole; now one label per interval, half way along it
+    - Panel wording: 'Drillholes: styles and labels'; Import settings 'GeoPackage'
+    - Fix: strings showed only their vertex dots, not their lines, in the QGIS 3 3D window (Qgis2threejs 2.x); string lines are now drawn without a shared index
+    - 'Link selected → wireframe' renamed 'Link selected' (panel and 3D toolbar), with a tooltip saying where the triangles go
+    - Fix: the 3D window's Digitise string button stayed pressed after digitising was stopped in the 3D view, so the next click did nothing
+    - QGeo 3D saves to the project's "QGeo 3D data" subfolder by default: import GeoPackages, the strings / wireframes GeoPackage of a new project and the export folder (work folder while the project is unsaved or in a protected folder; projects with a strings file in the work folder keep it)
+    0.16.0
     - First public release on plugins.qgis.org (experimental)
     - Fix: strings whose two ends lie within tens of metres of each other were read / exported as closed outlines (Micromine and Surpac strings, string export) - closure now means the ends coincide
     - Fix: removing the strings layer from the project left QGeo 3D pointing at the deleted layer; it now carries on with the strings GeoPackage

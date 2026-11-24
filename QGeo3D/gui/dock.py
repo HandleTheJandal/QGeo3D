@@ -34,6 +34,7 @@ def work_dir():
 
 
 OUT_KEY_MODE = "/QGeo3D/importOutMode"      # work | project | source | custom | ask
+OUT_DEFAULT = "project"                      # default: the project's "QGeo 3D data" subfolder
 OUT_KEY_DIR = "/QGeo3D/importOutDir"
 COORD_FIELDS = {"EAST", "NORTH", "RL", "_EAST", "_NORTH", "_RL", "X", "Y", "Z", "XC", "YC", "ZC", "EASTING",
                 "NORTHING", "ELEVATION", "ELEV", "_GEOM_X", "_GEOM_Y", "_GEOM_Z", "XCENTRE", "YCENTRE", "ZCENTRE"}
@@ -43,8 +44,9 @@ OLD_SUBDIR = "QGIS2Three4 data"                  # kept when it already exists (
 
 
 def _subdir(base):
-    old = os.path.join(base, OLD_SUBDIR)
-    return old if os.path.isdir(old) and not os.path.isdir(os.path.join(base, SUBDIR)) else os.path.join(base, SUBDIR)
+    """<base>/QGeo 3D data. (Files already saved in an older "QGIS2Three4 data" folder stay there; projects
+    refer to them by their full path.)"""
+    return os.path.join(base, SUBDIR)
 
 
 OUT_MODES = [("work", "Plugin work folder"), ("project", "Project folder (\"QGeo 3D data\" subfolder)"),
@@ -229,7 +231,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         self.hook.itemsChanged.connect(self._updateHud)
 
         # drillholes
-        sDh = section("drill", "Drillholes / channels: styles and labels")
+        sDh = section("drill", "Drillholes: styles and labels")
         self.sDh = sDh
         self.cbDhLayer = QComboBox()
         self.cbDhLayer.setToolTip("Drillhole / channel layer to style: the line layers in the 3D view (Objects list). "
@@ -276,7 +278,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         self.cbOut = QComboBox()
         for k, lab in OUT_MODES:
             self.cbOut.addItem(lab, k)
-        i = self.cbOut.findData(QSettings().value(OUT_KEY_MODE, "work") or "work")
+        i = self.cbOut.findData(QSettings().value(OUT_KEY_MODE, OUT_DEFAULT) or OUT_DEFAULT)
         self.cbOut.setCurrentIndex(max(0, i))
         self.cbOut.currentIndexChanged.connect(self._outModeChanged)
         bOut = P.tool("/mActionFileOpen.svg", "Choose the fixed folder", self._chooseOutDir)
@@ -294,7 +296,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         self.cbBmGpkg.currentIndexChanged.connect(
             lambda _=0: QSettings().setValue(BM_GPKG_KEY, self.cbBmGpkg.currentData()))
         f = QFormLayout()
-        f.addRow("Block model GeoPackage", self.cbBmGpkg)
+        f.addRow("GeoPackage", self.cbBmGpkg)
         sOut.add(f)
 
         # ================================================================ Section
@@ -632,7 +634,8 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         self.spSG.setValue(2.70)
         self.spSG.setPrefix("SG ")
         self.spSG.setToolTip("Density (t/m³) used for tonnage")
-        bLink = QPushButton(P.icon("link"), "Link selected → wireframe")
+        bLink = QPushButton(P.icon("link"), "Link selected")
+        bLink.setToolTip("Link the strings selected in the list into the wireframe chosen in Into. Closed outlines are linked section by section; 2-point strings are tie lines. Ends stay open; use Close end.")
         self.bLink = bLink
         bLink.setProperty("role", "primary")
         bLink.clicked.connect(self.linkSelected)
@@ -806,7 +809,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         return dict(getattr(self, "_remember", {}))
 
     # ------------------------------------------------- wireframe on/off list
-    OVERLAY_LABELS = {"drill": "Drillholes / channels", "strings": "Strings", "blocksec": "Block outlines on section",
+    OVERLAY_LABELS = {"drill": "Drillholes", "strings": "Strings", "blocksec": "Block outlines on section",
                       "check:open": "Wireframe check: open edges", "check:nonmanifold": "Wireframe check: edges on 3+ triangles",
                       "check:bad": "Wireframe check: bad triangles"}
 
@@ -1814,8 +1817,11 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                     ("layer", key) if kind == "q2t" else None
             if preselect is None and self.iface.activeLayer() is not None:
                 preselect = ("layer", self.iface.activeLayer().id())
-        os.makedirs(os.path.join(work_dir(), "export"), exist_ok=True)
-        dlg = ExportDialog(self, srcs, preselect, os.path.join(work_dir(), "export"))
+        pf = QgsProject.instance().fileName()
+        base = _subdir(os.path.dirname(pf)) if pf else work_dir()
+        exp = os.path.join(work_dir() if is_protected(base) else base, "export")   # starting folder only
+        os.makedirs(exp, exist_ok=True)
+        dlg = ExportDialog(self, srcs, preselect, exp)
         if dlg.exec() != QDialog.DialogCode.Accepted:
             return None
         return self.runExport(dlg.config())
@@ -2057,7 +2063,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         Returns None if the user cancels the 'ask' dialog."""
         from qgis.PyQt.QtCore import QSettings
         from ..core.q2thook import is_protected
-        mode = QSettings().value(OUT_KEY_MODE, "work") or "work"
+        mode = QSettings().value(OUT_KEY_MODE, OUT_DEFAULT) or OUT_DEFAULT
         cand, why = None, None
         if mode == "project":
             pf = QgsProject.instance().fileName()
@@ -3012,8 +3018,24 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
 
     # ------------------------------------------------------------ strings
     def defaultGpkg(self):
+        """<project folder>/QGeo 3D data/<project>_strings.gpkg - unless the project already has a strings file in
+        the work folder (kept, so its strings and wireframes stay in use), or the project is unsaved or in a
+        protected folder (work folder)."""
         proj = QgsProject.instance().baseName() or "untitled"
-        return os.path.join(work_dir(), f"{proj}_strings.gpkg")
+        name = f"{proj}_strings.gpkg"
+        old = os.path.join(work_dir(), name)
+        if os.path.exists(old):
+            return old
+        pf = QgsProject.instance().fileName()
+        if pf:
+            d = _subdir(os.path.dirname(pf))
+            if not is_protected(d):
+                try:
+                    os.makedirs(d, exist_ok=True)
+                    return os.path.join(d, name)
+                except OSError:
+                    pass
+        return old
 
     def ensureStore(self):
         if self.store.layer is None:
@@ -3065,6 +3087,9 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         self.bDig.blockSignals(True)
         self.bDig.setChecked(on)
         self.bDig.blockSignals(False)
+        vt = self._vtb()                         # keep the 3D window's toolbar button in step too
+        if vt is not None and hasattr(vt, "aString"):
+            vt._mirror(vt.aString, bool(on))
 
     def _sectionTag(self):
         s = self.currentSection()
@@ -3741,7 +3766,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                          f"No layer '{lname}' found in {os.path.basename(path)}", Qgis.MessageLevel.Info, 8)
 
     def _objClicked(self, it):
-        """Clicking a drillhole line layer in Objects picks it in Drillholes / channels: styles and labels."""
+        """Clicking a drillhole line layer in Objects picks it in Drillholes: styles and labels."""
         if it is None:
             return
         d = it.data(Qt.ItemDataRole.UserRole)
@@ -4202,7 +4227,8 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             return
         field = self.cbDhField.currentText()
         field = None if field in ("", "(none)") else field
-        ivs, hole_field = TB.layer_intervals(layer, self.canvas.mapSettings().destinationCrs(), field)
+        groups = []                              # which feature (interval) each segment belongs to
+        ivs, hole_field = TB.layer_intervals(layer, self.canvas.mapSettings().destinationCrs(), field, groups=groups)
         legend_html = ""
         if self.cbDhTubes.isChecked() and ivs:
             legend, colour = TB.classes(field, [v for _a, _b, v, _h in ivs]) if field else ([], lambda v: "#c060ff")
@@ -4217,7 +4243,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             self.hook.setTubes("drill", None)
             self.hook.setOverlay("drill", polyline_payload(layer_polylines(layer, self.canvas.mapSettings().destinationCrs()),
                                                            DRILL_COLOR, snap="ends", point_size=4))
-        holes, grades = TB.label_specs(ivs, field if self.cbDhGrade.isChecked() else None)
+        holes, grades = TB.label_specs(ivs, field if self.cbDhGrade.isChecked() else None, groups=groups)
         self.hook.setLabels("drillIds", {"items": holes, "size": 11} if self.cbDhIds.isChecked() and holes else None)
         self.hook.setLabels("drillVals", {"items": grades, "size": 10} if grades else None)
         self.lblDhLegend.setText((f"<b>{_H.escape(field)}</b>: " if field else "") + legend_html +

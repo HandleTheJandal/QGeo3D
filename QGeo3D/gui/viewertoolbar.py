@@ -120,10 +120,12 @@ class ViewerToolbar:
         self.aQuery = self._act("query", "Query", self._query, checkable=True,
                                 tip="Click an object to see its attributes (Esc clears)")
         self.aString = self._act("string", "Digitise string", d.bDig.setChecked, checkable=True,
-                                 tip="Click points in 3D. Backspace undo · Enter / right-click finish · Esc cancel")
+                                 tip="Digitise a string into the active string layer: click points in the 3D view · Backspace "
+                                     "undoes a point · Enter / right-click / double-click finishes the string · Esc "
+                                     "cancels it (twice: stop digitising)")
         self._connect(d.bDig.toggled, lambda on: self._mirror(self.aString, on))
-        self._act("link", "Link selected strings → wireframe", d.linkSelected,
-                  tip="Link the strings selected in Inspector ▸ Strings into a wireframe")
+        self._act("link", "Link selected", d.linkSelected,
+                  tip="Link the strings selected in the list into the wireframe chosen in Into. Closed outlines are linked section by section; 2-point strings are tie lines. Ends stay open; use Close end.")
         self.aMeasure = self._act("measure", "Measure", d.setMeasure, checkable=True,
                                   tip="Click A and B: length, bearing, plunge; a third point C gives the dip and dip "
                                       "direction of the plane A B C. Snaps like digitising. Esc ends")

@@ -1,6 +1,14 @@
 # Changelog
 
 
+## 0.16.1
+- Fix: drillhole value labels were repeated along intervals that follow a curved hole; now one label per interval, half way along it
+- Panel wording: 'Drillholes: styles and labels'; Import settings 'GeoPackage'
+- Fix: strings showed only their vertex dots, not their lines, in the QGIS 3 3D window (Qgis2threejs 2.x); string lines are now drawn without a shared index
+- 'Link selected → wireframe' renamed 'Link selected' (panel and 3D toolbar), with a tooltip saying where the triangles go
+- Fix: the 3D window's Digitise string button stayed pressed after digitising was stopped in the 3D view, so the next click did nothing
+- QGeo 3D saves to the project's "QGeo 3D data" subfolder by default: import GeoPackages, the strings / wireframes GeoPackage of a new project and the export folder (work folder while the project is unsaved or in a protected folder; projects with a strings file in the work folder keep it)
+
 ## 0.16.0
 - First public release on plugins.qgis.org (experimental)
 - Fix: strings whose two ends lie within tens of metres of each other were read / exported as closed outlines (Micromine and Surpac strings, string export) - closure now means the ends coincide
