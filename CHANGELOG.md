@@ -1,6 +1,9 @@
 # Changelog
 
 
+## 0.16.2
+- Homepage, repository and issue links point to github.com/HandleTheJandal/QGeo3D (account renamed)
+
 ## 0.16.1
 - Fix: drillhole value labels were repeated along intervals that follow a curved hole; now one label per interval, half way along it
 - Panel wording: 'Drillholes: styles and labels'; Import settings 'GeoPackage'
