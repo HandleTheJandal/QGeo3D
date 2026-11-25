@@ -79,10 +79,10 @@ def tube_spec(segments, colours, radius=0.6, sides=6, max_verts=65000):
         k = np.arange(sides)
         k2 = (k + 1) % sides
         quads = np.stack([k, k2, sides + k2, k, sides + k2, sides + k], axis=1).ravel()   # 6 per side
-        I = (base + quads[None, :]).ravel().astype(np.uint16)
+        idx = (base + quads[None, :]).ravel().astype(np.uint16)
         C = np.repeat(rgb[s0:s0 + n_chunk], per, axis=0)
         chunks.append({"pos": _b64(P.reshape(-1, 3).astype("<f4")), "nrm": _b64(N.reshape(-1, 3).astype("<f4")),
-                       "col": _b64(C.astype("u1")), "idx": _b64(I.astype("<u2"))})
+                       "col": _b64(C.astype("u1")), "idx": _b64(idx.astype("<u2"))})
     return {"offset": [float(x) for x in offset], "chunks": chunks}
 
 

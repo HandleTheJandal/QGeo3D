@@ -47,9 +47,10 @@ def _num(v):
 
 # =============================================================== Micromine
 MM_MAGIC = b"THIS IS MICROMINE EXTENDED DATA FILE!\x07\x1a\x01\r\n"
+_MM_STAMP = b"%016x" % 0x67452301EFCDAB89      # the fixed time-stamp Micromine writes
 MM_XML = (b'<?xml version="1.0" encoding="utf-8"?><metadata version="1.0"><meta-object type="title" version="1.0" '
-          b'time-stamp="67452301efcdab89" compulsory="true"><data title="" description=""/></meta-object><meta-object '
-          b'type="encoding" version="1.0" time-stamp="67452301efcdab89" compulsory="true"><data codepage="UTF-8"/>'
+          b'time-stamp="' + _MM_STAMP + b'" compulsory="true"><data title="" description=""/></meta-object><meta-object '
+          b'type="encoding" version="1.0" time-stamp="' + _MM_STAMP + b'" compulsory="true"><data codepage="UTF-8"/>'
           b'</meta-object></metadata>')
 MM_NAN = struct.pack("<d", float("nan"))
 

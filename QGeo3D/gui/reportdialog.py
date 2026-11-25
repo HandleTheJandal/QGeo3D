@@ -47,9 +47,14 @@ class CurveWidget(QWidget):
         x0, x1 = min(xs), max(xs) or 1
         t1 = max(ts) or 1
         g1 = max(gs) if gs else 1
-        X = lambda v: L + (v - x0) / ((x1 - x0) or 1) * w
-        YT = lambda v: T + h - v / t1 * h
-        YG = lambda v: T + h - v / (g1 * 1.1 or 1) * h
+        def X(v):
+            return L + (v - x0) / ((x1 - x0) or 1) * w
+
+        def YT(v):
+            return T + h - v / t1 * h
+
+        def YG(v):
+            return T + h - v / (g1 * 1.1 or 1) * h
         p.setPen(QPen(QColor("#45505a"), 1))
         for k in range(5):
             y = T + h * k / 4

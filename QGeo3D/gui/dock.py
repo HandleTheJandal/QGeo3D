@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """QGeo 3D dock panel: wireframes, camera, sections."""
 
+import contextlib
 import json
 import os
 
@@ -953,18 +954,18 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         if not p:
             return []
         out = []
-        for l in QgsProject.instance().mapLayers().values():
-            src = l.source()
+        for lyr in QgsProject.instance().mapLayers().values():
+            src = lyr.source()
             if os.path.normcase(os.path.normpath(src.split("|")[0])) == p and "layername=strings" in src.lower():
-                out.append(l)
+                out.append(lyr)
         return out
 
     def _strMapToggled(self, on):
         """Show on map: tick / untick the strings layer in the Layers panel (or draw them as a map overlay
         when the layer isn't in the project)."""
         root = QgsProject.instance().layerTreeRoot()
-        for l in self._strMapLayers():
-            n = root.findLayer(l.id())
+        for lyr in self._strMapLayers():
+            n = root.findLayer(lyr.id())
             if n is None:
                 continue
             if on:
@@ -980,7 +981,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             if not lays:
                 return
             root = QgsProject.instance().layerTreeRoot()
-            vis = any(root.findLayer(l.id()) is not None and root.findLayer(l.id()).isVisible() for l in lays)
+            vis = any(root.findLayer(lyr.id()) is not None and root.findLayer(lyr.id()).isVisible() for lyr in lays)
             if self.cbStrMap.isChecked() != vis:
                 self.cbStrMap.blockSignals(True)
                 self.cbStrMap.setChecked(vis)
@@ -2681,14 +2682,12 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         out = []
         src = os.path.normcase(os.path.abspath(bm.path)) if getattr(bm, "path", None) else None
         for ml in QgsProject.instance().mapLayers().values():
-            try:
+            with contextlib.suppress(Exception):
                 if not is_block_layer(ml):
                     continue
                 p = os.path.normcase(os.path.abspath((ml.source() or "").split("|")[0]))
                 if bm_name(ml) == bm.name or (src and p == src):
                     out.append(ml)
-            except Exception:
-                continue
         return out
 
     def applyBmStyle(self, bid, field, style, to_qgis=False):
@@ -3101,10 +3100,8 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
     def _poll(self):
         if self.hook._page is None:
             # notice a Qgis2threejs window opened on its own: hook it (ringfence, menu, panel)
-            try:
+            with contextlib.suppress(Exception):
                 self.hook.window()
-            except Exception:
-                pass
             if self.hook._page is None:
                 return
         try:
@@ -3233,7 +3230,8 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         from qgis.PyQt.QtGui import QFont
 
         collapsed = self._collapsedGroups()
-        arrow = lambda g: "▸" if g in collapsed else "▾"
+        def arrow(g):
+            return "▸" if g in collapsed else "▾"
 
         def header(text, gkey):
             h = QListWidgetItem(f"{arrow(gkey)} {text}")
@@ -3405,8 +3403,8 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
 
     def setAllLayersCollapsed(self, collapse):
         from ..core.strings import string_layers
-        for l in set(string_layers(self.store).values()):
-            (self._collapsedGroups().add if collapse else self._collapsedGroups().discard)("layer:" + l)
+        for lname in set(string_layers(self.store).values()):
+            (self._collapsedGroups().add if collapse else self._collapsedGroups().discard)("layer:" + lname)
         self._collapsedGroups().discard("layers")
         self.toggleGroup("wf", collapse)
 
@@ -3568,7 +3566,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             from ..core.strings import string_layers
             mv = m.addMenu(f"Move {len(nos)} string{'s' if len(nos) > 1 else ''} to layer")
             for lname in dict.fromkeys(string_layers(self.store).values()):
-                mv.addAction(lname, lambda l=lname: self.moveStringsToLayer(nos, l))
+                mv.addAction(lname, lambda ln=lname: self.moveStringsToLayer(nos, ln))
             mv.addSeparator()
             mv.addAction("New layer…", lambda: self.moveStringsToLayer(nos, None))
         wfs = [k[1] for k in sel if isinstance(k, (tuple, list)) and k[0] == "wf"]
@@ -3726,9 +3724,9 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         if n is None:
             self.plugin._msg(f"No layer '{lname}' in {os.path.basename(path)}.", Qgis.MessageLevel.Info, 5)
             return
-        prj = [l for l in QgsProject.instance().mapLayers().values()
-               if os.path.normcase(os.path.normpath(l.source().split("|")[0])) == os.path.normcase(os.path.normpath(path))
-               and f"layername={lname}" in l.source()]
+        prj = [lyr for lyr in QgsProject.instance().mapLayers().values()
+               if os.path.normcase(os.path.normpath(lyr.source().split("|")[0])) == os.path.normcase(os.path.normpath(path))
+               and f"layername={lname}" in lyr.source()]
         if which == "strings":
             body = (f"Delete the whole layer '{lname}' - all {n} string(s) - from\n{path}\n\n"
                     "The strings disappear from the 3D view and the map. Wireframes are kept.")
@@ -3738,7 +3736,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                     f"{len(built)} of them shown in the 3D view are removed from it. Strings are kept.")
         if prj:
             body += "\n\nThese QGIS layers use it and are removed from the project:\n" + \
-                    "\n".join(f"  • {l.name()}" for l in prj)
+                    "\n".join(f"  • {lyr.name()}" for lyr in prj)
         body += "\n\nThe GeoPackage file itself stays."
         if not self._confirmDelete("Delete layer", body, "This can't be undone."):
             return
@@ -3755,7 +3753,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                     self._triUndo = [e for e in getattr(self, "_triUndo", []) if e[1] != mid]
                     self._redo = [e for e in getattr(self, "_redo", []) if e[1] != mid]
             if prj:
-                QgsProject.instance().removeMapLayers([l.id() for l in prj])
+                QgsProject.instance().removeMapLayers([lyr.id() for lyr in prj])
             ok = delete_gpkg_layer(path, lname)
         except Exception as e:
             self.plugin._msg(f"Layer not deleted: {e}", Qgis.MessageLevel.Critical, 10)
@@ -3833,8 +3831,9 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
 
     def revealPath(self, path):
         """Show a file in Explorer (selected), or open a folder."""
-        import subprocess
         import sys
+        from qgis.PyQt.QtCore import QProcess, QUrl
+        from qgis.PyQt.QtGui import QDesktopServices
         p = str(path or "").split("|")[0].strip()
         if p.lower().startswith("file:///"):
             p = p[8:]
@@ -3843,17 +3842,17 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             return
         p = os.path.normpath(p)
         try:
-            if sys.platform.startswith("win"):
-                if os.path.isdir(p):
-                    os.startfile(p)
-                else:
-                    subprocess.Popen(f'explorer /select,"{p}"')
+            if os.path.isdir(p):
+                QDesktopServices.openUrl(QUrl.fromLocalFile(p))
+            elif sys.platform.startswith("win"):
+                proc = QProcess()                       # Explorer with the file selected
+                proc.setProgram("explorer.exe")
+                proc.setNativeArguments(f'/select,"{p}"')
+                proc.startDetached()
             elif sys.platform == "darwin":
-                subprocess.Popen(["open", "-R", p])
+                QProcess.startDetached("open", ["-R", p])
             else:
-                from qgis.PyQt.QtCore import QUrl
-                from qgis.PyQt.QtGui import QDesktopServices
-                QDesktopServices.openUrl(QUrl.fromLocalFile(p if os.path.isdir(p) else os.path.dirname(p)))
+                QDesktopServices.openUrl(QUrl.fromLocalFile(os.path.dirname(p)))
         except Exception as e:
             self.plugin._msg(f"Can't open {p}: {e}", Qgis.MessageLevel.Warning, 6)
 
@@ -3895,10 +3894,8 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                 if not rename_saved_wireframe(self.wireframeGpkg(), no, name):
                     raise KeyError(f"wireframe #{no} not found in {self.wireframeGpkg()}")
                 m.name = f"{name} #{no}"
-                try:
+                with contextlib.suppress(Exception):
                     self.hook.itemsChanged.emit()
-                except Exception:
-                    pass
         except Exception as e:
             self.plugin._msg(f"Not renamed: {e}", Qgis.MessageLevel.Critical, 8)
             return
@@ -4149,17 +4146,17 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         """[(label, layerId)] - line layers in the 3D view, plus the drillhole layer in use."""
         out, ids = [], set()
         for lid, name, _shown in self._q2tEntries():
-            l = QgsProject.instance().mapLayer(lid)
-            if l is not None and hasattr(l, "geometryType") and l.geometryType() == Qgis.GeometryType.Line:
+            lyr = QgsProject.instance().mapLayer(lid)
+            if lyr is not None and hasattr(lyr, "geometryType") and lyr.geometryType() == Qgis.GeometryType.Line:
                 node = QgsProject.instance().layerTreeRoot().findLayer(lid)
                 grp = node.parent().name() if node is not None and node.parent() is not None else ""
                 out.append((f"{name}  ·  {grp}" if grp else f"{name}  ·  3D layer", lid))
                 ids.add(lid)
         cur = getattr(self, "drillLayerId", None)
         if cur and cur not in ids:
-            l = QgsProject.instance().mapLayer(cur)
-            if l is not None:
-                out.append((l.name(), cur))
+            lyr = QgsProject.instance().mapLayer(cur)
+            if lyr is not None:
+                out.append((lyr.name(), cur))
         return out
 
     def _fillDhLayers(self):
@@ -4235,7 +4232,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             spec = TB.tube_spec([(a, b) for a, b, _v, _h in ivs], [colour(v) for _a, _b, v, _h in ivs],
                                 self.spDhRad.value())
             self.hook.setTubes("drill", spec)
-            legend_html = " ".join(f"<span style='color:{c}'>■</span> {_H.escape(str(l))}" for l, c in legend)
+            legend_html = " ".join(f"<span style='color:{c}'>■</span> {_H.escape(str(lab))}" for lab, c in legend)
             # the snap lines stay (they snap) but in dark grey, so the tube colours read
             self.hook.setOverlay("drill", polyline_payload(layer_polylines(layer, self.canvas.mapSettings().destinationCrs()),
                                                            "#3a3a3a", snap="ends", point_size=0))
@@ -4328,10 +4325,8 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             QgsProject.instance().crsChanged.disconnect(self._projectCrsChanged)
         except TypeError:
             pass
-        try:
+        with contextlib.suppress(Exception):
             self.hook.stopDigitise()
-        except Exception:
-            pass
         try:
             self.canvas.mapToolSet.disconnect(self._mapToolChanged)
         except TypeError:

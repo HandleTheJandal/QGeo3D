@@ -6,6 +6,7 @@ point layer with block-size fields) in the Qgis2threejs layer list shows it as s
 the same as Blocks > Load - instead of Qgis2threejs points. Unticking hides the blocks; the tick
 follows the block model's visibility in the panel. Every other layer behaves as before.
 """
+import contextlib
 import os
 import re
 
@@ -138,10 +139,8 @@ class BlockLayerTree(QObject):
         lyr = self.wnd.settings.getLayer(ml.id())
         if lyr is not None and lyr.visible:
             lyr.visible = False
-            try:
+            with contextlib.suppress(Exception):
                 self.wnd.controller.hideLayer(lyr)
-            except Exception:
-                pass
         self._bold(item, on)
         bid = "bm:" + bm_name(ml)
         if on:
@@ -287,10 +286,8 @@ class BlockLayerTree(QObject):
                 lyr = self.wnd.settings.getLayer(lid)
                 if lyr is not None and lyr.visible:      # ticked before QGeo 3D took it over
                     lyr.visible = False
-                    try:
+                    with contextlib.suppress(Exception):
                         self.wnd.controller.hideLayer(lyr)
-                    except Exception:
-                        pass
                 if (it.checkState() == Qt.CheckState.Checked) != shown:
                     self._setCheck(it, shown)
                 self._bold(it, shown)

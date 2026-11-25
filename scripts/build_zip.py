@@ -27,7 +27,11 @@ def build():
                 if f.endswith(SKIP_EXT) or f.startswith("."):
                     continue
                 p = os.path.join(d, f)
-                z.write(p, os.path.relpath(p, TOP).replace(os.sep, "/"))
+                info = zipfile.ZipInfo.from_file(p, os.path.relpath(p, TOP).replace(os.sep, "/"))
+                info.external_attr = 0o100644 << 16      # plain rw-r--r-- files (no executable bits)
+                info.compress_type = zipfile.ZIP_DEFLATED
+                with open(p, "rb") as fh:
+                    z.writestr(info, fh.read())
                 n += 1
     print(f"{out}: {n} files, {os.path.getsize(out):,} bytes")
     return out

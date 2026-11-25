@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Collect data for writers.py from QGIS layers, 3D meshes and block models, in a chosen CRS."""
 
+import contextlib
 import numpy as np
 from qgis.core import Qgis, QgsCoordinateTransform, QgsProject, QgsWkbTypes
 
@@ -35,11 +36,9 @@ def layer_fields(layer):
 
 
 def _val(v):
-    try:
+    with contextlib.suppress(Exception):
         if v is None or (hasattr(v, "isNull") and v.isNull()):
             return None
-    except Exception:
-        pass
     if hasattr(v, "toString") and not isinstance(v, (int, float, str)):
         return v.toString()
     return v

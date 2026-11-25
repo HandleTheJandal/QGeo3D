@@ -89,7 +89,10 @@ def read_dhdb(path):
         cp = os.path.join(tmp, "db.dhdb")
         shutil.copy2(path, cp)
         con = sqlite3.connect(cp)
-        q = lambda sql: [dict(zip([d[0] for d in cur.description], r)) for cur in [con.execute(sql)] for r in cur.fetchall()]
+        def q(sql):
+            cur = con.execute(sql)
+            names = [d[0] for d in cur.description]
+            return [dict(zip(names, r)) for r in cur.fetchall()]
         collar = q("select * from CollarFiles")
         survey = q("select * from SurveyFiles")
         intervals = q("select * from IntervalFiles")
@@ -97,7 +100,8 @@ def read_dhdb(path):
         con.close()
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
-    res = lambda f: f if os.path.isabs(f) else os.path.join(folder, f)
+    def res(f):
+        return f if os.path.isabs(f) else os.path.join(folder, f)
     c = collar[0]
     out = {
         "collar": {"file": res(c["File Name"]), "id": c["Hole ID Field1"], "east": c["East Field"],

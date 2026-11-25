@@ -2,6 +2,7 @@
 """Section plot: the 3D view (with its grid, scale bar and labels) on a print layout with a
 title block and legend, exported to PDF through QGIS's layout engine."""
 
+import contextlib
 import datetime
 import html
 import os
@@ -75,12 +76,10 @@ def section_pdf(path, image, title, subtitle, page="A3 landscape", legend=(), dr
     pic.attemptResize(QgsLayoutSize(pw, ph, _mm(0)))
     frame = QgsLayoutItemShape(layout)
     frame.setShapeType(enum("QgsLayoutItemShape.Shape.Rectangle", "QgsLayoutItemShape.Rectangle"))
-    try:
+    with contextlib.suppress(Exception):
         from qgis.core import QgsFillSymbol
         frame.setSymbol(QgsFillSymbol.createSimple({"color": "0,0,0,0", "outline_color": "#333333",
                                                     "outline_width": "0.3"}))
-    except Exception:
-        pass
     layout.addLayoutItem(frame)
     frame.attemptMove(QgsLayoutPoint(m, m, _mm(0)))
     frame.attemptResize(QgsLayoutSize(pw, ph, _mm(0)))
@@ -99,12 +98,10 @@ def section_pdf(path, image, title, subtitle, page="A3 landscape", legend=(), dr
     y = H - m - tb_h
     box = QgsLayoutItemShape(layout)
     box.setShapeType(enum("QgsLayoutItemShape.Shape.Rectangle", "QgsLayoutItemShape.Rectangle"))
-    try:
+    with contextlib.suppress(Exception):
         from qgis.core import QgsFillSymbol
         box.setSymbol(QgsFillSymbol.createSimple({"color": "255,255,255,255", "outline_color": "#333333",
                                                   "outline_width": "0.3"}))
-    except Exception:
-        pass
     layout.addLayoutItem(box)
     box.attemptMove(QgsLayoutPoint(m, y, _mm(0)))
     box.attemptResize(QgsLayoutSize(W - 2 * m, tb_h, _mm(0)))

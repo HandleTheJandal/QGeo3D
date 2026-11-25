@@ -100,14 +100,14 @@ def parse_bm_header(lines):
             ("subblocks", ("sub-blocking", "subblocking", "sub blocks", "sub-blocks", "subblock count")),
             ("boundary", ("boundary size", "extent", "extents")))
     for raw in lines:
-        l = raw.strip().lstrip("#").strip()
-        low = l.lower()
+        line = raw.strip().lstrip("#").strip()
+        low = line.lower()
         for key, names in keys:
             if key in out:
                 continue
             for nm in names:
                 if low.startswith(nm):
-                    nums = [float(x) for x in re.findall(_NUM, l[len(nm):])]
+                    nums = [float(x) for x in re.findall(_NUM, line[len(nm):])]
                     if len(nums) >= 3:
                         out[key] = nums[:3]
                     break

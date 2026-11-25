@@ -115,7 +115,7 @@ class QgisTreeLayout(QObject):
         tv = self.tv
         layers = list(self.wnd.settings.layers())
         order = {tl.layerId(): i for i, tl in enumerate(QgsProject.instance().layerTreeRoot().findLayers())}
-        layers.sort(key=lambda l: order.get(l.layerId, len(order) + 1))     # stable: extras keep their order
+        layers.sort(key=lambda lyr: order.get(lyr.layerId, len(order) + 1))     # stable: extras keep their order
         self.clearLayers()
         for lyr in layers:
             self.addLayer(lyr)

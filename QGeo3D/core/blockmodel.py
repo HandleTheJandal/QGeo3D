@@ -353,7 +353,6 @@ class BlockModel:
 
     def hide_suggestions(self):
         """[(rule, label)] guessed from field names and descriptions (e.g. '3 = air')."""
-        import re
         out = []
         for n in (self.propField, self.densityField, self.tonnesField):
             if n:
@@ -387,7 +386,6 @@ class BlockModel:
 
     def parse_rule(self, rule):
         """'density <= 0 or rock = 3' -> [(field, op, value)]. Raises ValueError with a message."""
-        import re
         rule = (rule or "").strip()
         if not rule:
             return []

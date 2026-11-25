@@ -85,7 +85,7 @@ def _csv_rows(path, max_rows=None):
         head.decode(enc)
     except UnicodeDecodeError:
         enc = "cp1252"
-    sample = "\n".join(l for l in head.decode(enc, "replace").splitlines() if not l.lstrip().startswith("#"))
+    sample = "\n".join(ln for ln in head.decode(enc, "replace").splitlines() if not ln.lstrip().startswith("#"))
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",;\t|")
     except csv.Error:
@@ -93,7 +93,7 @@ def _csv_rows(path, max_rows=None):
     raw = []
     with open(path, newline="", encoding=enc, errors="replace") as fh:
         # '#' lines are comments (Leapfrog's embedded block model header, other exporters' notes)
-        lines = (l for l in fh if not l.lstrip().startswith("#"))
+        lines = (ln for ln in fh if not ln.lstrip().startswith("#"))
         for r in csv.reader(lines, dialect):
             raw.append(r)
             if max_rows and len(raw) >= max_rows + 40:
@@ -110,10 +110,10 @@ def csv_comments(path, max_lines=400):
             continue
         try:
             with open(p, encoding="utf-8-sig", errors="replace") as fh:
-                for i, l in enumerate(fh):
+                for i, ln in enumerate(fh):
                     if i > max_lines:
                         break
-                    t = l.strip()
+                    t = ln.strip()
                     if p == path:
                         if t.startswith("#"):
                             out.append(t.lstrip("#").strip())
@@ -136,8 +136,9 @@ def _finish(raw, header_row, nf):
         # (sheets often carry a title block or a 'COMPULSORY / OPTIONAL' row above the real header)
         header_row = 0
         first_data = next((i for i, r in enumerate(raw[:60]) if sum(_isnum(c) for c in r) >= 2), None)
-        lab = lambda r: (lambda cells: len(cells) >= 2 and sum(not _isnum(c) for c in cells) >= 0.8 * len(cells))(
-            [c for c in r if c.strip()])
+        def lab(r):
+            cells = [c for c in r if c.strip()]
+            return len(cells) >= 2 and sum(not _isnum(c) for c in cells) >= 0.8 * len(cells)
         if first_data is not None:
             for i in range(first_data - 1, -1, -1):
                 if lab(raw[i]):

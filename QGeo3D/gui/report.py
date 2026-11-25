@@ -3,6 +3,7 @@
 
 Nothing is sent by itself: the report is shown first (it can be edited), then copied and/or opened in
 the user's email program addressed to REPORT_EMAIL."""
+import contextlib
 import collections
 import datetime
 import os
@@ -70,15 +71,13 @@ class ErrorWatch:
         if self._offered_at and (now - self._offered_at).total_seconds() < 20:
             return
         self._offered_at = now
-        try:
+        with contextlib.suppress(Exception):
             bar = self.plugin.iface.messageBar()
             item = bar.createMessage("QGeo 3D", "Something went wrong in QGeo 3D.")
             b = QPushButton("Report this problem…")
             b.clicked.connect(lambda: (show_report(self.plugin, include_error=True), bar.popWidget(item)))
             item.layout().addWidget(b)
             bar.pushWidget(item, Qgis.MessageLevel.Warning, 30)
-        except Exception:
-            pass
 
 
 def _version(pkg_dir):
@@ -109,10 +108,8 @@ def diagnostics(plugin, include_error=True):
     prj = QgsProject.instance()
     h = plugin.hook
     w = None
-    try:
+    with contextlib.suppress(Exception):
         w = h._window
-    except Exception:
-        pass
     out = [
         "QGeo 3D problem report",
         f"Date: {datetime.datetime.now():%Y-%m-%d %H:%M}",

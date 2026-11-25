@@ -9,6 +9,7 @@ The toolbar holds no state of its own: every control mirrors a widget in the
 QGeo 3D panel so both stay in step.
 """
 
+import contextlib
 import os
 
 from qgis.PyQt.QtCore import QSize, Qt
@@ -344,12 +345,10 @@ class ViewerToolbar:
         self._catcher = None
         view = getattr(self.w.ui, "webView", None)
         if view is not None:                         # Qgis2threejs 2.x: the web view is a widget here
-            try:
+            with contextlib.suppress(Exception):
                 self._drop = DropFilter(self.dock, on_unknown=getattr(self.w, "fileDropped", None), parent=self.tb)
                 view.installEventFilter(self._drop)
                 self._dropView = view
-            except Exception:
-                pass
             return
         # Qgis2threejs 3.x: the view (often in another process) reports drops through fileDropped(urls);
         # take ours and pass the rest on
@@ -389,10 +388,8 @@ class ViewerToolbar:
     def remove(self):
         c = getattr(self, "_catcher", None)
         if c is not None:
-            try:
+            with contextlib.suppress(Exception):
                 c.remove()
-            except Exception:
-                pass
             self._catcher = None
         try:
             if getattr(self, "_dropView", None) is not None:
@@ -402,10 +399,8 @@ class ViewerToolbar:
                 self._dropSig.connect(self.w.fileDropped)
         except (RuntimeError, TypeError):
             pass
-        try:
+        with contextlib.suppress(Exception):
             self.hook.setWebToolbarVisible(True)
-        except Exception:
-            pass
         for sig, slot in self._conns:
             try:
                 sig.disconnect(slot)

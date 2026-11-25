@@ -249,10 +249,10 @@ def read_mdl(path):
     if L.max() > max(maxlev, 10):
         raise ValueError("Unexpected block levels in .mdl")
     lo = np.zeros((n, 3), np.float64)
-    for l in range(1, int(L.max()) + 1):
-        d = ((A >> (2 + 3 * l)) & 7) if l < 10 else ((B >> (3 * (l - 10))) & 7)
-        d = np.where(L >= l, d, 0)
-        sz = root / 2.0 ** l
+    for lev in range(1, int(L.max()) + 1):
+        d = ((A >> (2 + 3 * lev)) & 7) if lev < 10 else ((B >> (3 * (lev - 10))) & 7)
+        d = np.where(L >= lev, d, 0)
+        sz = root / 2.0 ** lev
         lo[:, 0] += ((d >> 2) & 1) * sz[0]
         lo[:, 1] += ((d >> 1) & 1) * sz[1]
         lo[:, 2] += (d & 1) * sz[2]

@@ -2,6 +2,7 @@
 """Import drillholes or a block model from CSV / Excel tables: pick file + sheet, check the
 guessed field for each role, go."""
 
+import contextlib
 import os
 
 from qgis.PyQt.QtCore import QSettings, pyqtSignal
@@ -261,9 +262,10 @@ class DrillholeTableDialog(QDialog):
             for n in names:
                 if n in (cs, ss):
                     continue
-                try:
+                fl = None
+                with contextlib.suppress(Exception):
                     fl, _r, _h = T.read_table(self.src.path, n, max_rows=50)
-                except Exception:
+                if fl is None:
                     continue
                 if T.guess(fl, "from") and T.guess(fl, "to") and T.guess(fl, "hole"):
                     d = IntervalDialog(self, self.src.path, n)

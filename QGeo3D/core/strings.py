@@ -6,6 +6,7 @@ project isn't ringfenced the same GeoPackage layer can also be added to the proj
 made there (2D editing) are picked up through the layer's dataChanged signal.
 """
 
+import contextlib
 import base64
 import datetime
 import os
@@ -205,10 +206,8 @@ class StringStore(QObject):
 
     def close(self):
         """Let go of the GeoPackage (another project is opening: it has its own strings file)."""
-        try:
+        with contextlib.suppress(Exception):
             self._disconnect()
-        except Exception:
-            pass
         self.layer = None
         self.path = None
         self.changed.emit()
@@ -362,12 +361,10 @@ def _layer_srs(path, src):
     QGIS's (mixed OSGeo4W installs) and fail here, so fall back to the CRS QGIS reads from the file."""
     if src is None:
         return None
-    try:
+    with contextlib.suppress(Exception):
         srs = src.GetSpatialRef()
         if srs is not None and (srs.GetAuthorityCode(None) or srs.IsProjected() or srs.IsGeographic()):
             return srs
-    except Exception:
-        pass
     try:
         from .crs import gpkg_crs, ogr_srs
         c = gpkg_crs(path, src.GetName())
@@ -441,12 +438,10 @@ def save_wireframe(path, mesh, name="", string_nos=(), sg=None, stats=None, crs=
     ds = None
     if err != 0:
         raise IOError("Failed to write wireframe feature")
-    try:
+    with contextlib.suppress(Exception):
         from .crs import repair_gpkg_crs, stamp_gpkg_crs
         if crs is not None:
             repair_gpkg_crs(path, crs)
-    except Exception:
-        pass
     return no
 
 

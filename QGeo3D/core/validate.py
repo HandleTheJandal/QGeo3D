@@ -84,21 +84,21 @@ def validate(mesh, tol=0.001):
         "open_edge_xyz": v[open_e].tolist(), "nonmanifold_edge_xyz": v[nonman].tolist(),
         "bad_triangle_xyz": v[f[degenerate | dup_mask]].tolist(),
     })
-    I = out["issues"]
+    issues = out["issues"]
     if out["coincident"]:
-        I.append(f"{coincident} corner(s) sit on another vertex but aren't joined to it (cracks) - Repair joins them")
+        issues.append(f"{coincident} corner(s) sit on another vertex but aren't joined to it (cracks) - Repair joins them")
     if out["degenerate"]:
-        I.append(f"{out['degenerate']} zero-area triangle(s) - Repair removes them")
+        issues.append(f"{out['degenerate']} zero-area triangle(s) - Repair removes them")
     if out["duplicates"]:
-        I.append(f"{out['duplicates']} duplicate triangle(s) - Repair removes them")
+        issues.append(f"{out['duplicates']} duplicate triangle(s) - Repair removes them")
     if len(open_e):
-        I.append(f"{len(open_e)} open edge(s): holes or a surface, so no volume (shown red) - fill them with Add triangles")
+        issues.append(f"{len(open_e)} open edge(s): holes or a surface, so no volume (shown red) - fill them with Add triangles")
     if len(nonman):
-        I.append(f"{len(nonman)} edge(s) shared by more than two triangles (shown magenta) - delete the extra triangles")
+        issues.append(f"{len(nonman)} edge(s) shared by more than two triangles (shown magenta) - delete the extra triangles")
     if inconsistent:
-        I.append(f"{inconsistent} edge(s) where neighbouring triangles face opposite ways - Repair re-orients them")
+        issues.append(f"{inconsistent} edge(s) where neighbouring triangles face opposite ways - Repair re-orients them")
     if inside_out:
-        I.append("the solid is inside out (normals point in) - Repair turns it the right way")
+        issues.append("the solid is inside out (normals point in) - Repair turns it the right way")
     return out
 
 

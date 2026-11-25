@@ -13,6 +13,7 @@ as VolumeElement and sub-blocked models as point sets with dX dY dZ data.
 OMF 2 files (a ZIP with Parquet arrays) are recognised and reported - they need the omf2 library.
 """
 
+import contextlib
 import datetime
 import json
 import os
@@ -130,7 +131,7 @@ def summary(path):
             kind = {"SurfaceElement": "surface", "LineSetElement": "lines", "PointSetElement": "points",
                     "VolumeElement": "blocks"}.get(cls, cls)
             info = ""
-            try:
+            with contextlib.suppress(Exception):
                 if kind == "surface" and g.get("triangles"):
                     o = f.obj(g["triangles"]) or {}
                     a = o.get("array", {})
@@ -142,8 +143,6 @@ def summary(path):
                     tv = f.array(g.get("tensor_v"))
                     tw = f.array(g.get("tensor_w"))
                     info = f"{len(tu)} × {len(tv)} × {len(tw)} cells"
-            except Exception:
-                pass
             out.append((uid, el.get("name") or cls, kind, info))
         return out
     finally:

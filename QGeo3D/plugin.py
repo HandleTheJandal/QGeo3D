@@ -5,6 +5,7 @@ Companion plugin: hooks into a running Qgis2threejs exporter window rather than
 forking it. Feature 1: wireframes with triangle edges. Feature 2: section slabs.
 """
 
+import contextlib
 import os
 
 from qgis.PyQt.QtCore import QEvent, QObject, QSettings, Qt, QTimer
@@ -45,11 +46,9 @@ def q2t_icon():
     mod = sys.modules.get("Qgis2threejs")
     if mod is not None and getattr(mod, "__file__", None):
         dirs.append(os.path.dirname(mod.__file__))
-    try:
+    with contextlib.suppress(Exception):
         from qgis.utils import home_plugin_path, plugin_paths
         dirs += [os.path.join(p, "Qgis2threejs") for p in [home_plugin_path] + list(plugin_paths)]
-    except Exception:
-        pass
     for d in dirs:
         for rel in ("web/Qgis2threejs.png", "Qgis2threejs.png", "icon.png"):
             p = os.path.join(d, rel)
@@ -211,11 +210,9 @@ class QGeo3DPlugin:
         # Qgis2threejs may load after us, so try again once QGIS has finished starting
         self._q2tButtonHidden = None
         self._hideQ2TButton()
-        try:
+        with contextlib.suppress(Exception):
             self.iface.initializationCompleted.connect(self._hideQ2TButton)
             self.iface.initializationCompleted.connect(self._hidePanelInQgis)
-        except Exception:
-            pass
         QTimer.singleShot(3000, self._hideQ2TButton)
         QTimer.singleShot(3000, self._hidePanelInQgis)
 
@@ -232,11 +229,9 @@ class QGeo3DPlugin:
         self.hook.windowConnected.connect(self._onQ2TWindow)
 
         # if a Q2T window is already open (e.g. plugin reload), re-attach to it
-        try:
+        with contextlib.suppress(Exception):
             if self.hook.window() is not None:
                 self.hook.inject()
-        except Exception:
-            pass
 
     def _fillAddMenu(self):
         """Plugins / toolbar menu > Add: a fresh copy of the panel's Add menu."""
@@ -262,10 +257,8 @@ class QGeo3DPlugin:
         self._dockDrop = DropFilter(self.dock)
         self.dock.installEventFilter(self._dockDrop)
         if self._dropHandler is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.iface.unregisterCustomDropHandler(self._dropHandler)
-            except Exception:
-                pass
         self._dropHandler = MiningDropHandler(self.dock)
         self.iface.registerCustomDropHandler(self._dropHandler)
         self.iface.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.dock)
@@ -277,11 +270,9 @@ class QGeo3DPlugin:
         self.iface.addPluginToMenu(MENU, self.actPanel)
         if old_act is not None:                      # replace the dead entry everywhere it was listed
             self.actions = [self.actPanel if a is old_act else a for a in self.actions]
-            try:
+            with contextlib.suppress(Exception):
                 m = self.toolButton.menu()
                 m.insertAction(m.actions()[0] if m.actions() else None, self.actPanel)
-            except Exception:
-                pass
 
     def _gpuPrefer(self):
         from .core import gpu
@@ -318,13 +309,11 @@ class QGeo3DPlugin:
     def _hidePanelInQgis(self):
         """QGIS restores dock widgets it saw open last session; keep ours closed in the QGIS
         window unless the user asked for it this session."""
-        try:
+        with contextlib.suppress(Exception):
             if self.dock is None or sip.isdeleted(self.dock):
                 return
             if self.dock.parent() is self.iface.mainWindow() and not getattr(self, "_panelWanted", False):
                 self.dock.hide()
-        except Exception:
-            pass
 
     def _ensureDock(self):
         """The panel can die with a 3D window it was docked in: rebuild it rather than leave the plugin broken."""
@@ -368,11 +357,9 @@ class QGeo3DPlugin:
         if not getattr(w, "_q2t4CtrlHooked", False):
             def picked(action):
                 QSettings().setValue("/QGeo3D/controls", "Orbit" if action is ui.actionOrbitControls else "Map")
-            try:
+            with contextlib.suppress(Exception):
                 ui.actionGroupControls.triggered.connect(picked)
                 w._q2t4CtrlHooked = True
-            except Exception:
-                pass
         want = s.value("/QGeo3D/controls", "Orbit") or "Orbit"
         s.setValue("/Qgis2threejs/lastControls", want)      # Qgis2threejs' own default for new scenes
         if w.settings.controls() == want:
@@ -545,10 +532,8 @@ class QGeo3DPlugin:
             self._saveLayout(w)              # before the panel leaves the window
         self._dockToQgis()
         if self.viewerToolbar is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.viewerToolbar.remove()
-            except Exception:
-                pass
             self.viewerToolbar = None
 
     def _dockToQgis(self):
@@ -623,23 +608,19 @@ class QGeo3DPlugin:
         if ew is not None:
             ew.remove()
             self.errorWatch = None
-        try:
+        with contextlib.suppress(Exception):
             w = self._q2tAlive()
             if w is not None and self.dock is not None and not sip.isdeleted(self.dock):
                 self._saveLayout(w)
-        except Exception:
-            pass
         try:
             if self.dock is not None and sip.isdeleted(self.dock):
                 self.dock = None            # destroyed with a 3D window: nothing left to tidy
         except Exception:
             self.dock = None
-        try:
+        with contextlib.suppress(Exception):
             self.iface.unregisterCustomDropHandler(self._dropHandler)
             if self.dock is not None:
                 self.dock.removeEventFilter(self._dockDrop)
-        except Exception:
-            pass
         try:
             self.hook.windowConnected.disconnect(self._onQ2TWindow)
         except TypeError:
@@ -647,24 +628,18 @@ class QGeo3DPlugin:
         self._dockToQgis()
         w = self._q2tAlive()
         if w is not None and self.treeLayout is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self.treeLayout.restore()
-            except Exception:
-                pass
         self.treeLayout = None
         cf = getattr(self, "cursorFix", None)
         if cf is not None:
-            try:
+            with contextlib.suppress(Exception):
                 cf.detach()
-            except Exception:
-                pass
         self.cursorFix = None
         bt = getattr(self, "blockTree", None)
         if bt is not None and w is not None:
-            try:
+            with contextlib.suppress(Exception):
                 bt.restore()
-            except Exception:
-                pass
         self.blockTree = None
         self._removeArrangeCombo()
         if self.viewerToolbar is not None and w is not None:
@@ -690,11 +665,9 @@ class QGeo3DPlugin:
             if not sip.isdeleted(a):
                 self.iface.removePluginMenu(MENU, a)
         self.iface.removeToolBarIcon(self.toolbarAction)
-        try:
+        with contextlib.suppress(Exception):
             self.iface.initializationCompleted.disconnect(self._hideQ2TButton)
             self.iface.initializationCompleted.disconnect(self._hidePanelInQgis)
-        except Exception:
-            pass
         self._restoreQ2TButton()
         if getattr(self, "actViewer", None) is not None:
             self.iface.removeToolBarIcon(self.actViewer)
@@ -708,11 +681,9 @@ class QGeo3DPlugin:
         a = getattr(q, "action", None) if q is not None else None
         if a is None or a is self._q2tButtonHidden:
             return
-        try:
+        with contextlib.suppress(Exception):
             self.iface.removeWebToolBarIcon(a)
             self._q2tButtonHidden = a
-        except Exception:
-            pass
 
     def _restoreQ2TButton(self):
         a = getattr(self, "_q2tButtonHidden", None)

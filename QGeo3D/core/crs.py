@@ -7,6 +7,7 @@ Data are transformed into the project CRS for the 3D view; the source CRS is kep
 item so it can be changed afterwards.
 """
 
+import contextlib
 import os
 
 import numpy as np
@@ -38,7 +39,7 @@ def file_crs(path):
                 return c
     if ext.lower() in NO_CRS_EXT:
         return None
-    try:
+    with contextlib.suppress(Exception):
         from osgeo import ogr
         ds = ogr.Open(path)
         if ds is not None:
@@ -53,8 +54,6 @@ def file_crs(path):
                     c = QgsCoordinateReferenceSystem.fromWkt(srs.ExportToWkt())
                     if c.isValid():
                         return c
-    except Exception:
-        pass
     return None
 
 
@@ -92,11 +91,9 @@ def _osr(crs):
         org, code = auth.split(":", 1)
         node = "PROJCS" if s.IsProjected() else ("GEOGCS" if s.IsGeographic() else None)
         if node and code.isdigit():
-            try:
+            with contextlib.suppress(Exception):
                 s.SetAuthority(node, org, int(code))
                 s.SetAttrValue(node, crs.description())
-            except Exception:
-                pass
     return s
 
 
@@ -155,12 +152,10 @@ def make_srs(x):
         return x
     if isinstance(x, (int, np.integer)) or (isinstance(x, str) and x.isdigit()):
         s = osr.SpatialReference()
-        try:
+        with contextlib.suppress(Exception):
             if s.ImportFromEPSG(int(x)) == 0:
                 s.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
                 return s
-        except Exception:
-            pass
         x = f"EPSG:{int(x)}"     # GDAL can't look it up - let QGIS do it
     return ogr_srs(x)
 
@@ -195,17 +190,13 @@ def ensure_proj():
     with a CRS fails; QGIS knows where proj.db is, so give GDAL the same search paths."""
     from osgeo import osr
     s = osr.SpatialReference()
-    try:
+    with contextlib.suppress(Exception):
         if s.ImportFromEPSG(4326) == 0:
             return True
-    except Exception:
-        pass
     paths = []
-    try:
+    with contextlib.suppress(Exception):
         from qgis.core import QgsProjUtils
         paths = [p for p in QgsProjUtils.searchPaths() if p]
-    except Exception:
-        pass
     import os
     import sys
     for cand in (os.environ.get("PROJ_DATA"), os.environ.get("PROJ_LIB"),

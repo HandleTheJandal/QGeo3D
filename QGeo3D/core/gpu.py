@@ -11,6 +11,7 @@
 Qgis2threejs itself already starts Chromium with --ignore-gpu-blocklist --enable-gpu-rasterization.
 """
 
+import contextlib
 import os
 import re
 import sys
@@ -95,13 +96,12 @@ def _programs():
     exe = os.path.normpath(QCoreApplication.applicationFilePath())
     progs = [exe]
     cand = []
-    try:
-        loc = QLibraryInfo.location(QLibraryInfo.LibraryExecutablesPath)     # Qt5
-    except Exception:
-        try:
-            loc = QLibraryInfo.path(QLibraryInfo.LibraryPath.LibraryExecutablesPath)  # Qt6
-        except Exception:
-            loc = ""
+    loc = ""
+    with contextlib.suppress(Exception):
+        if hasattr(QLibraryInfo, "LibraryPath"):            # Qt6
+            loc = QLibraryInfo.path(QLibraryInfo.LibraryPath.LibraryExecutablesPath)
+        else:                                               # Qt5
+            loc = QLibraryInfo.location(getattr(QLibraryInfo, "LibraryExecutablesPath"))
     for d in (loc, os.path.join(os.path.dirname(os.path.dirname(exe)), "apps", "Qt5", "bin"),
               os.path.join(os.path.dirname(os.path.dirname(exe)), "apps", "Qt6", "bin"), os.path.dirname(exe)):
         if d:

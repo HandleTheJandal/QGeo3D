@@ -1,4 +1,5 @@
 """Block model from GeoPackage: pick from the point layers of the GeoPackages QGeo 3D knows about."""
+import contextlib
 import datetime
 import glob
 import os
@@ -67,11 +68,9 @@ def candidates(files):
     from ..core.layerblocks import point_layers
     out = []
     for p in files:
-        try:
+        with contextlib.suppress(Exception):
             for n, c, z in point_layers(p):
                 out.append((p, n, c, z, os.path.getmtime(p)))
-        except Exception:
-            pass
     return out
 
 

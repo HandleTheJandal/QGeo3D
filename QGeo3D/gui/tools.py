@@ -2,6 +2,7 @@
 """Panel tools added in 0.9.3, kept out of dock.py: measuring, 3D vertex editing, saved views and
 the section plot PDF. Mixed into Q2T4Dock."""
 
+import contextlib
 import datetime
 import json
 import os
@@ -1086,10 +1087,8 @@ class ToolsMixin:
                            P.tool("look", "Go to the selected view", lambda: self.goView(self.lstViews.currentRow())),
                            P.tool("/mActionDeleteSelected.svg", "Forget the selected view", self.deleteView)))
         self._fillViews()
-        try:
+        with contextlib.suppress(Exception):
             QgsProject.instance().readProject.connect(lambda *_: self._fillViews())
-        except Exception:
-            pass
         return w
 
     def _fillViews(self):

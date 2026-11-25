@@ -489,7 +489,8 @@ def branch_cut(parent, kids):
     if len(kids) != 2:
         raise ValueError("Branching into more than two outlines: link it in steps (one split at a time)")
     o, u, v = _plane2d([parent] + list(kids))
-    to2 = lambda P: np.column_stack([(P - o) @ u, (P - o) @ v])
+    def to2(P):
+        return np.column_stack([(P - o) @ u, (P - o) @ v])
     c1, c2 = to2(kids[0]).mean(axis=0), to2(kids[1]).mean(axis=0)
     d = c2 - c1
     if np.linalg.norm(d) == 0:
@@ -542,7 +543,8 @@ def branch(parent, kids, pbase, kbases, verts, ia, ib, n_chord=3):
         verts.append(q)
     path1 = [(ia + t) % n for t in range(((ib - ia) % n) + 1)]       # ia -> ib
     path2 = [(ib + t) % n for t in range(((ia - ib) % n) + 1)]       # ib -> ia
-    V = lambda gi: np.asarray(verts[gi], float)
+    def V(gi):
+        return np.asarray(verts[gi], float)
     pieces = [([pbase + i for i in path1] + chord[::-1]),             # closes ib -> ... -> ia
               ([pbase + i for i in path2] + chord)]                   # closes ia -> ... -> ib
     cents = [np.mean([V(g) for g in pc_], axis=0) for pc_ in pieces]

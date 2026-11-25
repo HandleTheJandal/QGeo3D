@@ -11,6 +11,7 @@ int32 -1, int32 version, int32 GUID length, int32 x3, GUID text, then chunks of
 to it (no journal, no lock file); if that fails it is copied to a temp file first.
 """
 
+import contextlib
 import os
 import re
 import shutil
@@ -41,10 +42,8 @@ def _tridb(path):
             con = sqlite3.connect(Path(cp).as_uri() + "?mode=ro&immutable=1", uri=True)
         yield con
     finally:
-        try:
+        with contextlib.suppress(Exception):
             con.close()
-        except Exception:
-            pass
         if tmp:
             shutil.rmtree(tmp, ignore_errors=True)
 
@@ -65,11 +64,10 @@ def list_tridb(path):
     points, triangles}] (point/triangle counts read from the chunk headers, without loading)."""
     out = []
     with _tridb(path) as con:
-        cols = [r[1] for r in con.execute("pragma table_info(GeneralInformation)")]
-        want = [c for c in ("ID", "Name", "Code", "Title", "Colour", "XMinimum", "XMaximum", "YMinimum",
-                            "YMaximum", "ZMinimum", "ZMaximum", "DTMPlane", "Volume", "Validated") if c in cols]
-        for r in con.execute(f"select {','.join(want)} from GeneralInformation order by Name"):
-            d = dict(zip(want, r))
+        cur = con.execute("select * from GeneralInformation order by Name")
+        names = [c[0] for c in cur.description]
+        for r in cur.fetchall():
+            d = dict(zip(names, r))
             hdr = con.execute("select substr(Geometry, 1, 400), length(Geometry) from Geometry where ID=?",
                               (d["ID"],)).fetchone()
             npts = ntri = None

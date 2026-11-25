@@ -8,6 +8,7 @@ No Qgis2threejs code is modified. We:
   * re-inject + re-push after every sceneLoaded (page reloads wipe JS state)
 """
 
+import contextlib
 import base64
 import json
 import os
@@ -103,13 +104,13 @@ def _q2t_settings_path():
     """Where Qgis2threejs saves a project's 3D settings (<project>.qto3settings).
     The helper moved from Qgis2threejs.utils (2.x) to Qgis2threejs.utils.qgis (3.x)."""
     for mod in ("Qgis2threejs.utils", "Qgis2threejs.utils.qgis", "Qgis2threejs.qgis2threejstools"):
-        try:
+        f = None
+        with contextlib.suppress(Exception):
             import importlib
             f = getattr(importlib.import_module(mod), "settingsFilePath", None)
-            if f is not None:
+        if f is not None:
+            with contextlib.suppress(Exception):
                 return f()
-        except Exception:
-            continue
     from qgis.core import QgsProject
     fn = QgsProject.instance().fileName()
     return fn + ".qto3settings" if fn else None
@@ -135,10 +136,8 @@ def guard_q2t_settings(window):
                 return False
             return orig(target)
         except Exception as e:
-            try:
+            with contextlib.suppress(Exception):
                 log(f"Qgis2threejs settings not saved: {e}", Qgis.MessageLevel.Warning)
-            except Exception:
-                pass
             return False
 
     s.saveSettings = guarded_save

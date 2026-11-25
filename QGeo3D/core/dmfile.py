@@ -263,7 +263,8 @@ def datamine_angles(R):
     a1, a2, a3 = (float(-np.degrees(x)) for x in (al, b, ga))
     if a2 < -1e-9:                              # same rotation, read more naturally: ANGLE2 >= 0
         a1, a2, a3 = a1 + 180.0, -a2, a3 + 180.0
-    w = lambda x: round(((x + 180.0) % 360.0) - 180.0, 10) or 0.0
+    def w(x):
+        return round(((x + 180.0) % 360.0) - 180.0, 10) or 0.0
     return w(a1), w(a2), w(a3)
 
 
