@@ -4,6 +4,7 @@
 import contextlib
 import json
 import os
+import re
 
 import numpy as np
 
@@ -169,6 +170,9 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                 ("Drillholes: Micromine .DHDB…", None, self.loadDhdbDialog),
                 ("Drillholes from CSV / Excel…", "/mActionOpenTable.svg", lambda: self.tableDrillholesDialog()),
                 (None, None, None),
+                ("Point cloud (.las / .laz)…", "/mIconPointCloudLayer.svg", self.openPointCloudDialog),
+                ("Point cloud from active layer", "/mIconPointCloudLayer.svg", self.loadPointCloudActiveLayer),
+                (None, None, None),
                 ("Saved wireframes (strings GeoPackage)", None, self.showSavedWireframes)):
             if text is None:
                 m.addSeparator()
@@ -195,6 +199,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         bAdd.setProperty("role", "primary")
         bAdd.setToolTip("Open a wireframe, block model, drillholes, strings or points - or drop files on the 3D view")
         bAdd.setMenu(self._addMenu())
+        bAdd.setMinimumWidth(bAdd.fontMetrics().horizontalAdvance("Add") + 64)   # room for icon + menu arrow
         bExp = QPushButton(P.icon("export"), "Export…")
         bExp.setToolTip("Write the selected wireframe / block model, or any GeoPackage / QGIS layer, as Micromine, "
                         "Datamine, Surpac, Leapfrog, OMF, DXF, OBJ or CSV")
@@ -260,14 +265,18 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         self.cbDhIds.setToolTip("Hole ID at the top of each hole")
         self.cbDhGrade = QCheckBox("Values")
         self.cbDhGrade.setToolTip("Value of the colour field at each interval (on the section when one is set)")
-        bDhApply = QPushButton("Apply")
+        bDhApply = QPushButton("Apply to 3D view")
+        bDhApply.setProperty("role", "primary")
+        bDhApply.setToolTip("Draw the drillholes with these colours, tubes and labels")
         bDhApply.clicked.connect(self.drillDisplay)
+        self.bDhApply = bDhApply
         f = QFormLayout()
         f.setFieldGrowthPolicy(QFormLayout.FieldGrowthPolicy.AllNonFixedFieldsGrow)
         f.addRow("Colour by", self.cbDhField)
         f.addRow("Show", P.hrow(self.cbDhTubes, self.spDhRad, None))
-        f.addRow("Labels", P.hrow(self.cbDhIds, self.cbDhGrade, None, bDhApply))
+        f.addRow("Labels", P.hrow(self.cbDhIds, self.cbDhGrade, None))
         sDh.add(f)
+        sDh.add(P.hrow(bDhApply, None))          # under the options, on the left where it is seen
         self.lblDhLegend = QLabel("")
         self.lblDhLegend.setWordWrap(True)
         self.lblDhLegend.setTextFormat(Qt.TextFormat.RichText)
@@ -502,11 +511,11 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                                 "to start a new layer. Click a layer in the Wireframing list to make it active.")
         self.cbLayer.setEditText("strings")
         self.cbLayer.currentTextChanged.connect(lambda *_: QTimer.singleShot(0, self._fillStringList))
-        self.bDig = QPushButton(P.icon("string"), "Digitise in 3D")
+        self.bDig = QPushButton(P.icon("string"), "D\u0332igitise in 3D")
         self.bDig.setCheckable(True)
         self.bDig.setProperty("role", "primary")
-        self.bDig.setToolTip("Click points in the 3D view. Backspace: undo point · Enter / right-click / "
-                             "double-click: finish string · Esc: cancel string (twice: stop)")
+        self.bDig.setToolTip("Digitise (D): click points in the 3D view. Backspace: undo point · Enter / right-click "
+                             "/ double-click: finish string · Esc: cancel string (twice: stop) · D again: stop")
         self.bDig.toggled.connect(self._toggleDigitise)
         sStr.add(P.hrow(QLabel("Layer"), self.cbLayer, self.bDig, stretch_at=1))
         self.cbClosed = QCheckBox("Close outlines")
@@ -576,24 +585,55 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         self._toolGroup = QButtonGroup(self)
         self._toolGroup.setExclusive(False)
         self.strToolButtons = {}
+        # shortcut keys (in the 3D view and this panel): the key's letter is underlined on the button
         for mode, ic, text, tip in (
-                ("select", "select", "Select", "Click a string to select it · Ctrl+click adds / removes · drag a box "
-                                              "on empty space · Delete deletes the selected strings. Selection follows "
-                                              "the Wireframing list and the QGIS strings layer."),
-                ("move", "editv", "Move", "Drag vertices of strings (and of a wireframe selected in Objects); "
-                                         "Delete removes the vertex under the cursor"),
-                ("insert", "/mActionAddNodesItem.svg", "Insert", "Click on a string segment to add a point there"),
-                ("cut", "string_cut", "Cut", "Click a vertex or segment: an open string splits in two there; "
-                                                         "a closed outline opens (the clicked segment is removed)"),
-                ("copy", "/mActionEditCopy.svg", "Copy", "Click a string to duplicate it (asks for an offset)")):
-            b = P.tool(ic, tip, text=text, checkable=True)
+                ("select", "select", "Se\u0332lect", "Select (E): click a string to select it · Ctrl+click adds / "
+                                                    "removes · drag a box on empty space · Delete deletes the selected "
+                                                    "strings. Selection follows the Wireframing list and the QGIS "
+                                                    "strings layer."),
+                ("move", "editv", "M\u0332ove", "Move (M): drag vertices of strings (and of a wireframe selected in "
+                                                "Objects); Delete removes the vertex under the cursor"),
+                ("insert", "/mActionAddNodesItem.svg", "I\u0332nsert",
+                 "Insert (I): click on a string segment to add a point there"),
+                ("cut", "string_cut", "Cu\u0332t", "Cut (U): click a vertex or segment: an open string splits in two "
+                                                  "there; a closed outline opens (the clicked segment is removed)"),
+                ("copy", "/mActionEditCopy.svg", "C\u0332opy",
+                 "Copy (C): click a string to duplicate it (asks for an offset)")):
+            b = QPushButton(P.icon(ic), text)            # same style as Link selected / Link one by one / Close end
+            b.setToolTip(tip)
+            b.setCheckable(True)
             b.toggled.connect(lambda on, m=mode: self.setStringTool(m if on else None, sender=m))
             self.strToolButtons[mode] = b
             self._toolGroup.addButton(b)
-        tClose = P.tool("string_close", "Close the selected open strings (join the last point to the "
-                        "first). Select them with Select, or in the Wireframing list.", self.closeSelectedStrings,
-                        text="Close")
-        sEd.add(P.hrow(*self.strToolButtons.values(), tClose, None))
+        tClose = QPushButton(P.icon("string_close"), "Clo\u0332se")
+        tClose.setToolTip("Close (O): close the selected open strings (join the last point to the first). Select "
+                          "them with Select, or in the Wireframing list.")
+        tClose.clicked.connect(self.closeSelectedStrings)
+        self.bStrClose = tClose
+        from qgis.PyQt.QtWidgets import QSizePolicy as _QSP
+        gEd = QGridLayout()                           # 2 rows of 3 equal buttons
+        gEd.setContentsMargins(0, 0, 0, 0)
+        gEd.setHorizontalSpacing(4)
+        gEd.setVerticalSpacing(4)
+        for i, b in enumerate(list(self.strToolButtons.values()) + [tClose]):
+            b.setSizePolicy(_QSP.Policy.Ignored, _QSP.Policy.Fixed)
+            b.setMinimumWidth(60)
+            gEd.addWidget(b, i // 3, i % 3)
+        for c in range(3):
+            gEd.setColumnStretch(c, 1)
+        sEd.add(gEd)
+        from qgis.PyQt.QtGui import QKeySequence
+        try:
+            from qgis.PyQt.QtGui import QShortcut                  # Qt6
+        except ImportError:
+            from qgis.PyQt.QtWidgets import QShortcut              # Qt5
+        self._toolKeys = []
+        for key, tool in (("D", "digitise"), ("E", "select"), ("M", "move"), ("I", "insert"), ("U", "cut"),
+                          ("C", "copy"), ("O", "close")):
+            sc = QShortcut(QKeySequence(key), self)
+            sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
+            sc.activated.connect(lambda t=tool: self.editToolKey(t))
+            self._toolKeys.append(sc)
 
         sWf = section("wireframing", "Wireframing")
         sWf.add(P.hint("Wireframes and strings · tick = shown in 3D · double-click zooms. Select a wireframe to add "
@@ -607,7 +647,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                                    "Select a wireframe: Add triangles and Link selected put their triangles into it.\n"
                                    "Select two or more strings (Ctrl/Shift-click) to link: closed outlines are ordered "
                                    "section by section, open strings link in number order.")
-        sWf.add(self.lstStrings, 1)
+        # (added below the Wireframing buttons - see "list and its row" further down)
         self.lstStrings.itemSelectionChanged.connect(self._listSelectionTo3D)
         self.lstStrings.itemChanged.connect(self._wfListTicked)
         self.lstStrings.itemDoubleClicked.connect(self._zoomString)
@@ -638,7 +678,6 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         bLink = QPushButton(P.icon("link"), "Link selected")
         bLink.setToolTip("Link the strings selected in the list into the wireframe chosen in Into. Closed outlines are linked section by section; 2-point strings are tie lines. Ends stay open; use Close end.")
         self.bLink = bLink
-        bLink.setProperty("role", "primary")
         bLink.clicked.connect(self.linkSelected)
         tLoad = P.tool("/mActionShowAllLayers.svg", "Show the wireframes saved in the strings GeoPackage",
                        self.showSavedWireframes)
@@ -647,7 +686,9 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         tCheck = P.tool("/mActionCheckGeometry.svg", "Check the wireframes selected in this box (all, if none is): "
                         "open edges, edges on 3+ triangles, winding, inside-out, zero-area / duplicate triangles, "
                         "unjoined corners - with Show problems and Repair", self.validateSelected, text="Validate")
-        sWf.add(P.hrow(self.spSG, None, tCheck, tLoad, tWfRem))
+        tDelSel = P.tool("delete", "Delete the strings / wireframes selected in the list from the GeoPackage (it "
+                         "warns first, and only those you selected) - or press Delete in the list", self.deleteSelected)
+        rowList = P.hrow(self.spSG, None, tCheck, tLoad, tWfRem, tDelSel)
         self.lblWfFile = P.PathLabel("")
         bWfFile = P.tool("/mActionFileOpen.svg", "Save wireframes in the strings GeoPackage or in a separate one",
                          self.chooseWireframeGpkg)
@@ -669,7 +710,15 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         self.cbWf.addItem("New wireframe", None)
         self.cbWf.currentIndexChanged.connect(lambda *_: self._targetLabel())
         sWf.add(P.hrow(QLabel("Into"), self.cbWf, stretch_at=1))
-        sWf.add(P.hrow(bLink, self.bLinkPick, self.bCap, stretch_at=0))
+        rowLink = QHBoxLayout()                      # three equal buttons, same text size
+        rowLink.setContentsMargins(0, 0, 0, 0)
+        rowLink.setSpacing(4)
+        from qgis.PyQt.QtWidgets import QSizePolicy as _QSP
+        for b in (bLink, self.bLinkPick, self.bCap):
+            b.setSizePolicy(_QSP.Policy.Ignored, _QSP.Policy.Fixed)
+            b.setMinimumWidth(60)
+            rowLink.addWidget(b, 1)
+        sWf.add(rowLink)
         self.bTri = QPushButton(P.icon("/mActionCapturePolygon.svg"), "Add triangles")
         self.bTri.setCheckable(True)
         self.bTri.setToolTip("Asks which wireframe to put them in, then click three corners per triangle in the 3D "
@@ -689,7 +738,8 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             from qgis.PyQt.QtGui import QShortcut                  # Qt6
         except ImportError:
             from qgis.PyQt.QtWidgets import QShortcut              # Qt5
-        for keys, slot in (("Ctrl+Z", self.undoAny), ("Ctrl+Y", self.redoAny), ("Ctrl+Shift+Z", self.redoAny)):
+        for keys, slot in (("Ctrl+Z", self.undoAny), ("Backspace", self.undoAny), ("Ctrl+Y", self.redoAny),
+                           ("Ctrl+Shift+Z", self.redoAny)):
             sc = QShortcut(QKeySequence(keys), self)
             sc.setContext(Qt.ShortcutContext.WidgetWithChildrenShortcut)
             sc.activated.connect(slot)
@@ -697,15 +747,30 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         tTriAdd = P.tool("/mActionAddNodesItem.svg", "Put the blue (pending) triangles into a wireframe - "
                          "choose it from the list", self.addTrianglesToWireframe)
         self.tTriAdd = tTriAdd
-        tTriClr = P.tool("delete", "Delete what is selected in the list above (strings and / or wireframes, from the "
-                         "GeoPackage - it warns first); with nothing selected, discard the pending (blue) triangles",
-                         self.deleteSelected)
+        tTriClr = P.tool("/mActionDeleteSelected.svg", "Discard the pending (blue, not yet saved) triangles",
+                         self.discardPendingTriangles)
         sWf.add(P.hint("Triangles · snapping as set above"))
-        sWf.add(P.hrow(self.bTri, self.bTriDel, None, tTriUndo, tTriRedo, tTriAdd, tTriSave, tTriClr))
+        sWf.add(P.flow(self.bTri, self.bTriDel, tTriUndo, tTriRedo, tTriAdd, tTriSave, tTriClr))
         self.lblTri = P.hint("")
         sWf.add(self.lblTri)
+        # list and its row: below the buttons
+        sWf.add(self.lstStrings, 1)
+        sWf.add(rowList)
+        from qgis.PyQt.QtGui import QKeySequence as _QKS
+        try:
+            from qgis.PyQt.QtGui import QShortcut as _QSc                  # Qt6
+        except ImportError:
+            from qgis.PyQt.QtWidgets import QShortcut as _QSc              # Qt5
+        scDel = _QSc(_QKS(_QKS.StandardKey.Delete), self.lstStrings)
+        scDel.setContext(Qt.ShortcutContext.WidgetShortcut)
+        scDel.activated.connect(self.deleteSelected)
+        scDelObj = _QSc(_QKS(_QKS.StandardKey.Delete), self.lstWf)
+        scDelObj.setContext(Qt.ShortcutContext.WidgetShortcut)
+        scDelObj.activated.connect(self._wfRemove)
         self.lblWf = P.hint("")
         sWf.add(self.lblWf)
+        self.hook.itemsChanged.connect(lambda: QTimer.singleShot(0, self._updateWfLabel))
+        self.cbWf.currentIndexChanged.connect(lambda _i: QTimer.singleShot(0, self._updateWfLabel))
 
         # ================================================================ Query
         sQ = section("query", "Query")
@@ -725,9 +790,31 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             sa, body = self._page(*secs, stretch_last=stretch)
             bodies.append(body)
             self.tabs.addTab(sa, P.icon(ic), title)
-        self.tabs.setMinimumWidth(min(420, max(b.minimumSizeHint().width() for b in bodies) + 24))
         self.setWidget(self.tabs)
+        self._fitCombos()          # after setWidget: before it the drop-downs aren't children of the panel yet
+        self.tabs.setMinimumWidth(min(420, max(b.minimumSizeHint().width() for b in bodies) + 24))
         self._remember["queryHeader"] = self.tblQ.horizontalHeader()
+
+    def _fitCombos(self):
+        """Drop-downs size to the panel, not to their longest entry: long layer names would otherwise make
+        the page wider than the panel and push the right edge (and buttons) out of sight. The open list
+        still shows entries in full."""
+        for cb in self.findChildren(QComboBox):
+            cb.setSizeAdjustPolicy(QComboBox.SizeAdjustPolicy.AdjustToMinimumContentsLengthWithIcon)
+            cb.setMinimumContentsLength(8)
+            cb.setMinimumWidth(80)       # Qt 5 still sizes the minimum to the longest entry without this
+            cb.view().setTextElideMode(Qt.TextElideMode.ElideNone)
+            if not getattr(cb, "_q2tFitHooked", False):
+                cb._q2tFitHooked = True
+                cb.model().rowsInserted.connect(lambda *_a, c=cb: self._fitPopup(c))
+                cb.model().modelReset.connect(lambda *_a, c=cb: self._fitPopup(c))
+            self._fitPopup(cb)
+
+    @staticmethod
+    def _fitPopup(cb):
+        fm = cb.view().fontMetrics()
+        w = max([fm.horizontalAdvance(cb.itemText(i)) for i in range(cb.count())] or [0]) + 40
+        cb.view().setMinimumWidth(min(w, 900))
 
     def _buildSavedSections(self, sec):
         P = _pw
@@ -841,10 +928,13 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                 label = f"Micromine strings: {name[3:]}"
             elif name.startswith("mmpts:"):
                 label = f"Micromine points: {name[6:]}"
-            if name == "drill" and self.drillLayerId:
-                lyr = QgsProject.instance().mapLayer(self.drillLayerId)
-                if lyr is not None:
-                    label += f": {lyr.name()}"
+            elif name.startswith("cloud:"):
+                ci = getattr(self, "_clouds", {}).get(name, {})
+                cnt = (f"{ci['shown']:,} of {ci['total']:,} points" if ci.get("shown", 0) < ci.get("total", 0)
+                       else f"{ci.get('shown', 0):,} points")
+                label = f"{name[6:]}  ·  point cloud  ·  {cnt}"
+            if name.startswith("drill:"):
+                label = f"Drillholes: {self._dhLabel(name[6:])}"
             it = QListWidgetItem(label)
             it.setData(Qt.ItemDataRole.UserRole, ("overlay", name))
             it.setFlags(it.flags() | Qt.ItemFlag.ItemIsUserCheckable)
@@ -941,6 +1031,19 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             self.hook.setMeshVisible(key, on)
         else:
             self.hook.setOverlayVisible(key, on)
+
+    def editToolKey(self, tool):
+        """Shortcut keys E / M / I / U / C / O (3D view or panel): Select / Move / Insert / Cut / Copy on or off,
+        Close the selected strings."""
+        if tool == "close":
+            self.closeSelectedStrings()
+            return
+        if tool == "digitise":
+            self.bDig.setChecked(not self.bDig.isChecked())
+            return
+        b = self.strToolButtons.get(tool)
+        if b is not None:
+            b.setChecked(not b.isChecked())
 
     def _strings3D(self, on):
         self.hook.setOverlayVisible("strings", on)
@@ -1109,12 +1212,13 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                 self.hook.removeMesh(key)
                 if key == "manual":
                     self._manualTris = []
-            elif key == "drill":
-                self.clearDrill()
+            elif str(key).startswith("drill:"):
+                self.clearDrill(key[6:])
             elif key == "blocksec":
                 self.cbBmDisplay.setCurrentIndex(0)
-            elif str(key).startswith(("surpac:", "mm:", "mmpts:", "csv:")):
+            elif str(key).startswith(("surpac:", "mm:", "mmpts:", "csv:", "cloud:")):
                 self.hook.setOverlay(key, None)
+                getattr(self, "_clouds", {}).pop(key, None)
             elif key == "strings":
                 self.plugin._msg("Strings stay while a strings GeoPackage is open - untick to hide them, or "
                                  "delete them with Edit strings ▸ Select.", Qgis.MessageLevel.Info)
@@ -1153,8 +1257,10 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                 if lyr.visible and lyr.type in (1, 2) and lyr.mapLayer is not None:     # POINT, LINESTRING
                     out.append((lyr.name, lyr.mapLayer))
                     seen.add(lyr.mapLayer.id())
-        if self.drillLayerId and "drill" in self.hook.overlays and "drill" not in self.hook.hiddenOverlays:
-            dl = QgsProject.instance().mapLayer(self.drillLayerId)
+        for dlid in self._drillKeys():
+            if self._dk(dlid) in self.hook.hiddenOverlays:
+                continue
+            dl = QgsProject.instance().mapLayer(dlid)
             if dl is not None and dl.id() not in seen:
                 out.append((dl.name(), dl))
                 seen.add(dl.id())
@@ -1361,8 +1467,10 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             bb = bm.world_bbox() if bid not in self.hook.hiddenMeshes else None
             if bb:
                 items.append({"bbox": bb, "color": "#5FB36B"})
-        if self.drillLayerId and "drill" not in self.hook.hiddenOverlays:
-            lyr = QgsProject.instance().mapLayer(self.drillLayerId)
+        for _dlid in self._drillKeys():
+            if self._dk(_dlid) in self.hook.hiddenOverlays:
+                continue
+            lyr = QgsProject.instance().mapLayer(_dlid)
             if lyr is not None:
                 e = lyr.extent()
                 if not e.isEmpty():
@@ -1438,16 +1546,19 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                          "and desurveyed drillholes are loaded so far.", Qgis.MessageLevel.Warning, 10)
         return None
 
-    def loadDmDrillholes(self, path, crs=None):
+    def loadDmDrillholes(self, path, crs=None, name=None):
         """Desurveyed Datamine drillholes -> work/<name>_drillholes.gpkg (in their own CRS),
         QGIS group, 3D snap overlay (reprojected to the project CRS by QGIS)."""
         from ..core.dmfile import read_drillholes, write_drillholes_gpkg
         import numpy as np
-        name = os.path.splitext(os.path.basename(path))[0]
+        if name is None:
+            name = self._importName(f"{os.path.splitext(os.path.basename(path))[0]} drillholes (Datamine)", "drillholes")
+            if name is None:
+                return None
         od = self._importDir(path)
         if od is None:
             return None
-        out = os.path.join(od, f"{name}_drillholes.gpkg")
+        out = os.path.join(od, f"{self._safeName(name)}_drillholes.gpkg")
         if crs is None:
             from .crsdialog import ask_source_crs
             try:
@@ -1466,19 +1577,20 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             return None
         prj = QgsProject.instance()
         root = prj.layerTreeRoot()
-        gname = f"{name} drillholes (Datamine)"
+        gname = name
         old = root.findGroup(gname)
         if old is not None:
             root.removeChildNode(old)
         grp = root.insertGroup(0, gname)
         lyr = open_gpkg_layer(out, "intervals", f"{name} intervals")
-        self._noteGpkg("drill", out)
         if lyr.isValid():
             prj.addMapLayer(lyr, False)
             grp.addLayer(lyr)
             self.iface.setActiveLayer(lyr)
             self.useDrillLayer()
-        self.registerImport("drill", "overlay", path, crs, reload=lambda c, p=path: self.loadDmDrillholes(p, c))
+            self._noteGpkg(self._dk(), out)
+            self.registerImport(self._dk(), "overlay", path, crs,
+                                reload=lambda c, p=path, n=name: self.loadDmDrillholes(p, c, n))
         self.plugin._msg(f"{n} intervals from {os.path.basename(path)} written to {out}", Qgis.MessageLevel.Success, 8)
         return n
 
@@ -1745,6 +1857,162 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                          (" (3D view shows 300,000 of them)" if n > 300000 else ""), Qgis.MessageLevel.Success, 6)
         return n
 
+    # ---------------------------------------------------------- point clouds
+    PC_FILTER = "Point clouds (*.las *.LAS *.laz *.LAZ)"
+    PC_KEY_MAX = "/QGeo3D/cloudMaxPoints"
+
+    def openPointCloudDialog(self):
+        from qgis.PyQt.QtCore import QSettings
+        start = QSettings().value("/QGeo3D/lastPcDir", "")
+        path, _ = QFileDialog.getOpenFileName(self, "Open point cloud", start, self.PC_FILTER)
+        if path:
+            QSettings().setValue("/QGeo3D/lastPcDir", os.path.dirname(path))
+            self.loadPointCloud(path)
+
+    def loadPointCloudActiveLayer(self):
+        from qgis.core import QgsPointCloudLayer
+        lyr = self.plugin.iface.activeLayer()
+        if not isinstance(lyr, QgsPointCloudLayer):
+            self.plugin._msg("Select a point cloud layer (LAS / LAZ) in the Layers panel first.",
+                             Qgis.MessageLevel.Info, 6)
+            return None
+        path = lyr.source().split("|")[0]
+        if not os.path.isfile(path):
+            self.plugin._msg(f"{lyr.name()} is not a local LAS / LAZ file ({lyr.providerType()}).",
+                             Qgis.MessageLevel.Warning, 8)
+            return None
+        return self.loadPointCloud(path, lyr.crs(), name=lyr.name())
+
+    def _pcProjectCrs(self, path):
+        """CRS of a point cloud layer in the project that shows this file (set by the user), else None."""
+        from qgis.core import QgsPointCloudLayer
+        p = os.path.normcase(os.path.normpath(path))
+        for lyr in QgsProject.instance().mapLayers().values():
+            if isinstance(lyr, QgsPointCloudLayer) and lyr.crs().isValid() and \
+                    os.path.normcase(os.path.normpath(lyr.source().split("|")[0])) == p:
+                return lyr.crs()
+        return None
+
+    def loadPointCloud(self, path, crs=None, name=None, opts=None, ask=True):
+        """LAS / LAZ -> coloured dots in the 3D view (thinned to a point budget). LAZ / COPC go through
+        QGIS's PDAL tools first. Colour by the file's RGB, elevation, intensity, classification or an
+        extra attribute; the style can be changed later (right-click ▸ Point cloud style…)."""
+        from qgis.PyQt.QtCore import QSettings
+        from qgis.PyQt.QtWidgets import QApplication
+        from ..core import pointcloud as pc
+        from ..core.crs import transform_xyz
+        if not name:
+            name = self._importName(os.path.splitext(os.path.basename(path))[0].replace(".copc", ""), "point cloud")
+            if name is None:
+                return None
+        key = f"cloud:{name}"
+        opts = dict(opts or {})
+        opts.setdefault("max", int(QSettings().value(self.PC_KEY_MAX, 1000000) or 1000000))
+        src = path
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            h = pc.read_header(path)
+            if h["compressed"] or path.lower().endswith(pc.COMPRESSED):
+                self.plugin._msg(f"Converting {os.path.basename(path)} to LAS with QGIS's PDAL tools…",
+                                 Qgis.MessageLevel.Info, 4)
+                QApplication.processEvents()
+                src = pc.to_las(path)
+            cloud = pc.read_las(src, opts["max"])
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            self.plugin._msg(f"Could not read {os.path.basename(path)}: {e}", Qgis.MessageLevel.Critical, 10)
+            return None
+        QApplication.restoreOverrideCursor()
+        if crs is None:
+            crs = pc.las_crs(src) or self._pcProjectCrs(path)
+        if crs is None:
+            from .crsdialog import ask_source_crs
+            crs = ask_source_crs(self, path, cloud["xyz"][:: max(1, len(cloud["xyz"]) // 2000)])
+            if crs is None:
+                return None
+        choices = pc.colour_options(cloud["fields"])
+        if ask or opts.get("by") not in [k for k, _l in choices]:
+            res = self._pcStyleDialog(name, cloud, choices, opts)
+            if res is None:
+                return None
+            if res["max"] != opts["max"]:                    # new point budget: read again
+                QSettings().setValue(self.PC_KEY_MAX, res["max"])
+                return self.loadPointCloud(path, crs, name, res, ask=False)
+            opts = res
+        QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
+        try:
+            rgb, legend = pc.colours(cloud, opts["by"], log=opts.get("log", False))
+            xyz = transform_xyz(cloud["xyz"], crs, self.projectCrs())
+            spec = pc.payload(xyz, rgb, opts.get("size", 2))
+        except Exception as e:
+            QApplication.restoreOverrideCursor()
+            self.plugin._msg(f"Could not show {os.path.basename(path)}: {e}", Qgis.MessageLevel.Critical, 10)
+            return None
+        QApplication.restoreOverrideCursor()
+        if not hasattr(self, "_clouds"):
+            self._clouds = {}
+        self._clouds[key] = {"path": path, "name": name, "opts": opts, "shown": spec["count"],
+                             "total": cloud["total"], "legend": legend}
+        self.hook.setOverlay(key, spec)
+        self.registerImport(key, "overlay", path, crs,
+                            reload=lambda c, p=path, n=name, o=opts: self.loadPointCloud(p, c, n, o, ask=False))
+        lg = ""
+        if legend and "lo" in legend:
+            lg = f" · {legend['label']} {legend['lo']:.4g} (blue) – {legend['hi']:.4g} (red)"
+        part = f"{spec['count']:,} of {cloud['total']:,}" if spec["count"] < cloud["total"] else f"{spec['count']:,}"
+        self.plugin._msg(f"{name}: {part} points{lg}", Qgis.MessageLevel.Success, 8)
+        return spec["count"]
+
+    def _pcStyleDialog(self, name, cloud, choices, opts):
+        """Colour by / log scale / dot size / point budget. Returns the options, or None if cancelled."""
+        from qgis.PyQt.QtWidgets import QDialog, QDialogButtonBox, QSpinBox
+        dlg = QDialog(self)
+        dlg.setWindowTitle(f"Point cloud: {name}")
+        f = QFormLayout(dlg)
+        f.addRow(QLabel(f"<b>{name}</b> - {cloud['total']:,} points "
+                        f"(LAS {cloud['header']['version']}, point format {cloud['header']['format']})"))
+        cb = QComboBox()
+        for k, lab in choices:
+            cb.addItem(lab, k)
+        i = cb.findData(opts.get("by"))
+        cb.setCurrentIndex(max(0, i))
+        cbLog = QCheckBox("Log scale (for conductivity, resistivity, grades)")
+        cbLog.setChecked(bool(opts.get("log", False)))
+        cbLog.setEnabled(cb.currentData() not in ("RGB", "Classification", "Z"))
+        cb.currentIndexChanged.connect(lambda _i: cbLog.setEnabled(cb.currentData() not in ("RGB", "Classification", "Z")))
+        sp = QDoubleSpinBox()
+        sp.setRange(0.5, 20)
+        sp.setDecimals(1)
+        sp.setSuffix(" px")
+        sp.setValue(float(opts.get("size", 2)))
+        mx = QSpinBox()
+        mx.setRange(10000, 20000000)
+        mx.setSingleStep(250000)
+        mx.setGroupSeparatorShown(True)
+        mx.setValue(int(opts.get("max", 1000000)))
+        mx.setToolTip("Large clouds are thinned evenly to this many points. Over a few million points the 3D "
+                      "view gets slow (QGIS 3) or may run out of memory.")
+        f.addRow("Colour by", cb)
+        f.addRow("", cbLog)
+        f.addRow("Dot size", sp)
+        f.addRow("Show up to", mx)
+        bb = QDialogButtonBox(QDialogButtonBox.StandardButton.Ok | QDialogButtonBox.StandardButton.Cancel)
+        bb.accepted.connect(dlg.accept)
+        bb.rejected.connect(dlg.reject)
+        f.addRow(bb)
+        if dlg.exec() != QDialog.DialogCode.Accepted:
+            return None
+        return {"by": cb.currentData(), "log": cbLog.isEnabled() and cbLog.isChecked(), "size": sp.value(),
+                "max": mx.value()}
+
+    def pointCloudStyle(self, key):
+        """Right-click ▸ Point cloud style…: change colours / dot size / point budget."""
+        info = getattr(self, "_clouds", {}).get(key)
+        imp = getattr(self, "imports", {}).get(key)
+        if not info or not imp:
+            return
+        self.loadPointCloud(info["path"], imp["crs"], info["name"], info["opts"], ask=True)
+
     # ------------------------------------------------------- drag and drop
     def openDropped(self, paths):
         """Open dropped files by type. Several CSV / Excel files dropped together go into one drillhole
@@ -1775,6 +2043,8 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                         self.plugin._msg(f"{os.path.basename(p)} is not a Micromine data file.", Qgis.MessageLevel.Warning, 8)
                 elif e == ".omf":
                     self.openOmf(p)
+                elif e in (".las", ".laz"):
+                    self.loadPointCloud(p)
                 elif e in (".gpkg", ".shp"):
                     from ..core.layerblocks import face_layers, point_layers
                     pts, faces = point_layers(p), face_layers(p)
@@ -1903,9 +2173,14 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             self.plugin._msg(f"Could not read the tables: {e}", Qgis.MessageLevel.Critical, 10)
             return None
         src_path = cfg["collar"]["path"]
-        name = os.path.splitext(os.path.basename(src_path))[0]
-        if cfg["collar"].get("sheet") and len(intervals) == 0 and survey is None:
-            name += f" {cfg['collar']['sheet']}"
+        name = cfg.get("name")
+        if not name:
+            name = os.path.splitext(os.path.basename(src_path))[0]
+            if cfg["collar"].get("sheet") and len(intervals) == 0 and survey is None:
+                name += f" {cfg['collar']['sheet']}"
+            name = self._importName(f"{name} drillholes", "drillholes")
+            if name is None:
+                return None
         if crs is None:
             from .crsdialog import ask_source_crs
             c = cfg["collar"]
@@ -1918,7 +2193,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         od = self._importDir(src_path)
         if od is None:
             return None
-        out = self._freshGpkg(os.path.join(od, f"{name}_drillholes.gpkg"))
+        out = self._freshGpkg(os.path.join(od, f"{self._safeName(name)}_drillholes.gpkg"))
         QApplication.setOverrideCursor(Qt.CursorShape.WaitCursor)
         try:
             rep = build_from_tables(collar, survey, intervals, out, crs, src_path,
@@ -1930,7 +2205,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             QApplication.restoreOverrideCursor()
         prj = QgsProject.instance()
         root = prj.layerTreeRoot()
-        gname = f"{name} drillholes (table)"
+        gname = name
         old = root.findGroup(gname)
         if old is not None:
             root.removeChildNode(old)
@@ -1942,7 +2217,6 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             if ln == "q2t4_source":
                 continue
             lyr = open_gpkg_layer(out, ln, ln)
-            self._noteGpkg("drill", out)
             if lyr.isValid():
                 prj.addMapLayer(lyr, False)
                 grp.addLayer(lyr)
@@ -1952,8 +2226,9 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         if snap is not None:
             self.iface.setActiveLayer(snap)
             self.useDrillLayer()
-            self.registerImport("drill", "overlay", src_path, crs,
-                                reload=lambda c, cfg=cfg: self.loadTableDrillholes(cfg, c))
+            self._noteGpkg(self._dk(), out)
+            self.registerImport(self._dk(), "overlay", src_path, crs,
+                                reload=lambda c, cfg=dict(cfg, name=name): self.loadTableDrillholes(cfg, c))
         ints = ", ".join(f"{k} {a:,}/{b:,}" for k, (a, b) in rep["intervals"].items())
         msg = f"{rep['holes']} holes" + (f"; intervals placed: {ints}" if ints else "")
         if rep["no_survey"]:
@@ -1995,17 +2270,21 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             self.loadDhdb(path)
 
     @gdal_soft
-    def loadDhdb(self, path, crs=None):
+    def loadDhdb(self, path, crs=None, name=None):
         """Desurvey (minimum curvature) into work/<name>_desurveyed.gpkg (in the database's CRS)
         and add a QGIS group."""
         from qgis.PyQt.QtWidgets import QApplication
         from ..core.drillholes import build_gpkg
         from osgeo import ogr
-        name = os.path.splitext(os.path.basename(path))[0]
+        if name is None:
+            name = self._importName(f"{os.path.splitext(os.path.basename(path))[0]} drillholes (desurveyed)",
+                                    "drillholes")
+            if name is None:
+                return None
         od = self._importDir(path)
         if od is None:
             return None
-        out = self._freshGpkg(os.path.join(od, f"{name}_desurveyed.gpkg"))  # work/ is ours: rebuild from the (read-only) source
+        out = self._freshGpkg(os.path.join(od, f"{self._safeName(name)}_desurveyed.gpkg"))  # work/ is ours: rebuild from the (read-only) source
         if crs is None:
             from .crsdialog import ask_source_crs
             crs = ask_source_crs(self, path, None)
@@ -2021,7 +2300,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             QApplication.restoreOverrideCursor()
         prj = QgsProject.instance()
         root = prj.layerTreeRoot()
-        gname = f"{name} drillholes (desurveyed)"
+        gname = name
         old = root.findGroup(gname)
         if old is not None:
             root.removeChildNode(old)
@@ -2033,7 +2312,6 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             if ln == "q2t4_source":
                 continue
             lyr = open_gpkg_layer(out, ln, ln)
-            self._noteGpkg("drill", out)
             if lyr.isValid():
                 prj.addMapLayer(lyr, False)
                 grp.addLayer(lyr)
@@ -2047,7 +2325,9 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         if first_interval is not None:
             self.iface.setActiveLayer(first_interval)
             self.useDrillLayer()
-            self.registerImport("drill", "overlay", path, crs, reload=lambda c, p=path: self.loadDhdb(p, c))
+            self._noteGpkg(self._dk(), out)
+            self.registerImport(self._dk(), "overlay", path, crs,
+                                reload=lambda c, p=path, n=name: self.loadDhdb(p, c, n))
         ns = len(rep["no_survey"])
         if ns:
             self.plugin._msg(f"{rep['holes']} holes into {out}; {ns} have no survey and no collar azimuth / dip, so "
@@ -2154,10 +2434,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         """Remember the GeoPackage QGeo 3D wrote for a 3D item (so Remove can offer to delete it)."""
         if not hasattr(self, "gpkgOf"):
             self.gpkgOf = {}
-        if key == "drill":
-            self.gpkgOf["drill"] = {path}             # one drillhole set at a time
-        else:
-            self.gpkgOf.setdefault(key, set()).add(path)
+        self.gpkgOf.setdefault(key, set()).add(path)
 
     def _dropLayersUsing(self, path):
         """Remove project layers reading `path` (Windows keeps open GeoPackages locked, so they
@@ -2171,8 +2448,9 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                 node = prj.layerTreeRoot().findLayer(lyr.id())
                 if node is not None and node.parent() is not None:
                     groups.add(node.parent())
-                if lyr.id() == self.drillLayerId:
-                    self.drillLayerId = None
+                if lyr.id() == self.drillLayerId or self._dk(lyr.id()) in self.hook.overlays or \
+                        self._dk(lyr.id()) in getattr(self.hook, "tubes", {}):
+                    self.clearDrill(lyr.id())
                 prj.removeMapLayer(lyr.id())
         for g in groups:
             if g is not prj.layerTreeRoot() and not g.children() and g.parent() is not None:
@@ -2231,8 +2509,8 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         kind, key = its[0].data(Qt.ItemDataRole.UserRole)
         info = getattr(self, "imports", {}).get(key)
         prj = self.projectCrs()
-        if info is None and key == "drill" and self.drillLayerId:
-            lyr = QgsProject.instance().mapLayer(self.drillLayerId)
+        if info is None and str(key).startswith("drill:") and QgsProject.instance().mapLayer(key[6:]) is not None:
+            lyr = QgsProject.instance().mapLayer(key[6:])
             dlg = CrsDialog(self, "Coordinate system", f"Coordinate system of the layer <b>{lyr.name()}</b>:",
                             None, lyr.crs(), allow_remember=False)
             if dlg.exec() == QDialog.DialogCode.Accepted and dlg.crs().isValid():
@@ -2315,11 +2593,13 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                 self.reprojectImport(key, refresh_qgis_layers=False)   # centre layers carry their own CRS
             except Exception as e:
                 log(f"Could not re-place {key} in {new.authid()}: {e}")
-        if self.drillLayerId and "drill" not in getattr(self, "imports", {}):
-            lyr = QgsProject.instance().mapLayer(self.drillLayerId)
+        for _dlid in self._drillKeys():
+            if self._dk(_dlid) in getattr(self, "imports", {}) or self._dk(_dlid) not in self.hook.overlays:
+                continue
+            lyr = QgsProject.instance().mapLayer(_dlid)
             if lyr is not None:
-                self.hook.setOverlay("drill", polyline_payload(layer_polylines(lyr, new), DRILL_COLOR,
-                                                               snap="ends", point_size=4))
+                self.hook.setOverlay(self._dk(_dlid), polyline_payload(layer_polylines(lyr, new), DRILL_COLOR,
+                                                                       snap="ends", point_size=4))
         self.refreshStrings()
         self._update()
 
@@ -2466,7 +2746,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         finally:
             QApplication.restoreOverrideCursor()
         crs = lyr.crs() if lyr.crs().isValid() else None
-        return self._addBlockModel(bm, path or lyr.source().split("|")[0], add_to_qgis=False, crs=crs)
+        return self._addBlockModel(bm, path or lyr.source().split("|")[0], add_to_qgis=False, crs=crs, ask_name=False)
 
     def loadBlockModel(self, path, add_to_qgis=True, crs=None):
         from ..core.blockmodel import BlockModel
@@ -2481,7 +2761,12 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             QApplication.restoreOverrideCursor()
         return self._addBlockModel(bm, path, add_to_qgis, crs)
 
-    def _addBlockModel(self, bm, path, add_to_qgis=True, crs=None):
+    def _addBlockModel(self, bm, path, add_to_qgis=True, crs=None, ask_name=True):
+        if ask_name:
+            nm = self._importName(bm.name, "block model")
+            if nm is None:
+                return None
+            bm.name = nm
         for note in bm.notes:
             self.plugin._msg(f"{bm.name}: {note}", Qgis.MessageLevel.Warning, 10)
         if crs is None:
@@ -3133,7 +3418,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             elif ev.get("type") in ("measure", "measureMode", "editMode", "vertexMoved", "vertexDeleted",
                                     "vertexInserted", "stringCut", "stringCopy", "snapToggled", "traceToggled",
                                     "stringsSelected", "stringsDelete", "pointsDelete", "triDelMode", "triangleDelete",
-                                    "triMode", "triangle", "linkPick", "linkUndo", "capPick", "capUndo", "renameSelected", "undo", "redo"):
+                                    "triMode", "triangle", "linkPick", "linkUndo", "capPick", "capUndo", "renameSelected", "undo", "redo", "editTool"):
                 self._toolEvent(ev)
             elif ev.get("type") == "string":
                 try:
@@ -3628,14 +3913,17 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             self.removeItems([("mesh", w) for w in others])
         if nos or wfs:
             return
-        n = len(getattr(self, "_manualTris", []) or [])
-        if n:
-            if self._confirmDelete("Discard triangles", f"Discard the {n} pending (blue, not saved) triangle(s)?",
-                                   "This can't be undone."):
-                self.clearTriangles()
-            return
         self.plugin._msg("Nothing to delete - select strings or wireframes in the Wireframing list first.",
                          Qgis.MessageLevel.Info, 5)
+
+    def discardPendingTriangles(self):
+        n = len(getattr(self, "_manualTris", []) or [])
+        if not n:
+            self.plugin._msg("No pending (blue) triangles.", Qgis.MessageLevel.Info, 4)
+            return
+        if self._confirmDelete("Discard triangles", f"Discard the {n} pending (blue, not saved) triangle(s)?",
+                               "This can't be undone."):
+            self.clearTriangles()
 
     def deleteStringsFromGpkg(self, nos):
         recs = {r[0]: r for r in string_records(self.store)}
@@ -3786,9 +4074,11 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         m.setToolTipsVisible(True)
         if kind != "strings":
             m.addAction("Zoom to", lambda: self._wfZoom(it))
-        dh = key if kind == "q2t" else (getattr(self, "drillLayerId", None) if (kind, key) == ("overlay", "drill") else None)
+        dh = key if kind == "q2t" else (key[6:] if kind == "overlay" and str(key).startswith("drill:") else None)
         if dh and any(lid == dh for _t, lid in self._dhLayerCandidates()):
             m.addAction("Styles and labels…", lambda: self.styleDrillLayer(dh))
+        if kind == "overlay" and str(key).startswith("cloud:"):
+            m.addAction("Point cloud style…", lambda: self.pointCloudStyle(key))
         path = self.itemPath(kind, key)
         a = m.addAction("Open path", lambda: self.revealPath(path))
         a.setEnabled(bool(path))
@@ -3813,7 +4103,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             imp = getattr(self, "imports", {}).get(key)
             if imp and imp.get("path"):
                 return str(imp["path"])
-            lid = key if kind == "q2t" else (self.drillLayerId if kind == "overlay" and key == "drill" else None)
+            lid = key if kind == "q2t" else (key[6:] if kind == "overlay" and str(key).startswith("drill:") else None)
             if lid:
                 lyr = QgsProject.instance().mapLayer(lid)
                 if lyr is not None:
@@ -4006,28 +4296,53 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             return
         self._reportBuilt(st, wf_no, sg)
 
-    def _reportBuilt(self, st, wf_no, sg):
-        if wf_no is not None:
-            self._setActiveWf(f"built{wf_no}")           # further links / caps / triangles go into it
+    @staticmethod
+    def _wfStatusText(st, label, sg):
+        """Status line for a wireframe (stats from Mesh.stats()) and its message level."""
         if st.get("closed"):
-            txt = (f"#{wf_no}: {st['triangles']} triangles, closed. Volume {st['volume']:,.1f} m³ × SG {sg:g} "
+            txt = (f"{label}: {st['triangles']} triangles, closed solid. Volume {st['volume']:,.1f} m³ × SG {sg:g} "
                    f"= {st['volume'] * sg:,.1f} t")
             level = Qgis.MessageLevel.Success
         else:
-            txt = (f"#{wf_no}: {st['triangles']} triangles, open ({st['open_edges']} open edges), "
-                   f"area {st['area']:,.1f} m². Use Close end on the end outlines to make it a solid.")
+            txt = (f"{label}: {st.get('triangles', 0)} triangles, open ({st.get('open_edges', 0)} open edges), "
+                   f"area {st.get('area', 0):,.1f} m². Use Close end on the end outlines to make it a solid.")
             level = Qgis.MessageLevel.Info
         if st.get("nonmanifold_edges") or st.get("inconsistent_edges"):
             txt += f" Check: {st.get('nonmanifold_edges', 0)} non-manifold, {st.get('inconsistent_edges', 0)} inconsistent edges."
             level = Qgis.MessageLevel.Warning
+        return txt, level
+
+    def _reportBuilt(self, st, wf_no, sg):
+        if wf_no is not None:
+            self._setActiveWf(f"built{wf_no}")           # further links / caps / triangles go into it
+        txt, level = self._wfStatusText(st, f"#{wf_no}", sg)
         self.lblWf.setText(txt)
         self.plugin._msg(txt, level, 10)
         if wf_no is not None:
             self._validateIfClosed(f"built{wf_no}")
 
+    def _updateWfLabel(self, *_):
+        """Keep the status line under Wireframing in step with the active wireframe as it is edited
+        (Close end, Add / Delete triangles, Link one by one, undo...). Left alone while a pick tool is
+        showing its own instructions there."""
+        if getattr(self, "_linkChain", None) is not None or getattr(self, "_editMode", None) == "link":
+            return
+        mid = self.wfTarget()
+        m = self.hook.meshes.get(mid) if mid else None
+        if m is None:
+            self.lblWf.setText("")
+            return
+        try:
+            sg = self.spSG.value() if hasattr(self, "spSG") else 2.7
+            txt, _lv = self._wfStatusText(m.stats(), m.name, sg)
+        except Exception:
+            return
+        self.lblWf.setText(txt)
+
     def _validateIfClosed(self, mid):
         """Check a wireframe once it is a closed solid (open ends while still building are expected)."""
         m = self.hook.meshes.get(mid)
+        self._updateWfLabel()
         if m is not None and m.stats().get("closed"):
             self.validateWireframes([mid], quiet_if_clean=True)
 
@@ -4117,6 +4432,64 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             self.plugin._msg(f"Could not load wireframes: {e}", Qgis.MessageLevel.Critical, 10)
 
     # ---------------------------------------------------------- drillholes
+    def _dk(self, lid=None):
+        """3D overlay / tube key of a drillhole layer (several drillhole layers can be shown at once)."""
+        return f"drill:{lid or self.drillLayerId}"
+
+    def _drillKeys(self):
+        """Drillhole layer ids shown in 3D (overlay or tubes)."""
+        out = []
+        for k in list(self.hook.overlays) + list(getattr(self.hook, "tubes", {})):
+            if str(k).startswith("drill:") and k[6:] not in out:
+                out.append(k[6:])
+        return out
+
+    def _dhLabel(self, lid):
+        lyr = QgsProject.instance().mapLayer(lid)
+        if lyr is None:
+            return lid
+        node = QgsProject.instance().layerTreeRoot().findLayer(lid)
+        grp = node.parent().name() if node is not None and node.parent() is not None and node.parent().name() else ""
+        return f"{grp} ▸ {lyr.name()}" if grp else lyr.name()
+
+    def _importName(self, default, what):
+        """Name for an import (its QGIS group / layer and 3D object). None if cancelled."""
+        txt, ok = QInputDialog.getText(self, f"Import {what}",
+                                       f"Name for the {what} (QGIS group and 3D view).\nA new name keeps earlier "
+                                       "imports; the same name replaces them.", text=default)
+        if not ok:
+            return None
+        return txt.strip() or default
+
+    @staticmethod
+    def _safeName(name):
+        return re.sub(r'[\\/:*?"<>|]+', "_", name).strip() or "import"
+
+    def _saveDhStyle(self):
+        lid = getattr(self, "drillLayerId", None)
+        if not lid:
+            return
+        if not hasattr(self, "_dhStyles"):
+            self._dhStyles = {}
+        self._dhStyles[lid] = {"field": self.cbDhField.currentText(), "tubes": self.cbDhTubes.isChecked(),
+                               "radius": self.spDhRad.value(), "ids": self.cbDhIds.isChecked(),
+                               "values": self.cbDhGrade.isChecked(), "legend": self.lblDhLegend.text()}
+
+    def _loadDhStyle(self, lid):
+        st = getattr(self, "_dhStyles", {}).get(lid)
+        if not st:                               # not styled yet: plain lines, no tubes or labels
+            for cb in (self.cbDhTubes, self.cbDhIds, self.cbDhGrade):
+                cb.setChecked(False)
+            self.lblDhLegend.setText("")
+            return
+        if self.cbDhField.findText(st["field"]) >= 0:
+            self.cbDhField.setCurrentText(st["field"])
+        self.cbDhTubes.setChecked(st["tubes"])
+        self.spDhRad.setValue(st["radius"])
+        self.cbDhIds.setChecked(st["ids"])
+        self.cbDhGrade.setChecked(st["values"])
+        self.lblDhLegend.setText(st.get("legend", ""))
+
     def useDrillLayer(self, layer=None):
         """Use a line layer of drillhole intervals / traces (default: the active QGIS layer) for snapping,
         colours, tubes and labels."""
@@ -4132,13 +4505,16 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
         if not QgsWkbTypes.hasZ(layer.wkbType()):
             self.plugin._msg("Layer has no Z - drillholes will sit at RL 0.", Qgis.MessageLevel.Warning)
         in3d = layer.id() in {lid for lid, _n, _s in self._q2tEntries()}
-        # a layer the 3D window already draws (and snaps to) needs no second copy; others get thin lines
-        self.hook.setOverlay("drill", None if in3d else polyline_payload(polys, DRILL_COLOR, snap="ends", point_size=4))
-        if self.drillLayerId != layer.id():
-            getattr(self, "imports", {}).pop("drill", None)     # re-registered by the importers after this
+        self._saveDhStyle()                      # the layer styled so far keeps its display and settings
+        key = self._dk(layer.id())
+        # a layer the 3D window already draws (and snaps to) needs no second copy; others get thin lines.
+        # A layer already shown (styled earlier) keeps what it has.
+        if key not in self.hook.overlays and key not in getattr(self.hook, "tubes", {}) and not in3d:
+            self.hook.setOverlay(key, polyline_payload(polys, DRILL_COLOR, snap="ends", point_size=4))
         self.drillLayerId = layer.id()
-        self.lblDrill.setText(f"{layer.name()}: {len(polys)} intervals - choose colours and labels, then Apply")
+        self.lblDrill.setText(f"{layer.name()}: {len(polys)} intervals - choose colours and labels, then Apply to 3D view")
         self._fillDhFields(layer)
+        self._loadDhStyle(layer.id())
         self._fillWfList()
         self._fillDhLayers()
 
@@ -4152,11 +4528,25 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
                 grp = node.parent().name() if node is not None and node.parent() is not None else ""
                 out.append((f"{name}  ·  {grp}" if grp else f"{name}  ·  3D layer", lid))
                 ids.add(lid)
-        cur = getattr(self, "drillLayerId", None)
-        if cur and cur not in ids:
-            lyr = QgsProject.instance().mapLayer(cur)
-            if lyr is not None:
-                out.append((lyr.name(), cur))
+        for cur in [getattr(self, "drillLayerId", None)] + self._drillKeys():
+            if cur and cur not in ids:
+                lyr = QgsProject.instance().mapLayer(cur)
+                if lyr is not None:
+                    out.append((self._dhLabel(cur), cur))
+                    ids.add(cur)
+        # the other interval tables (and traces) imported with those: line layers in the same group
+        root = QgsProject.instance().layerTreeRoot()
+        for cur in list(ids):
+            node = root.findLayer(cur)
+            grp = node.parent() if node is not None else None
+            if grp is None or grp is root:
+                continue
+            for ch in grp.findLayers():
+                lyr = ch.layer()
+                if lyr is not None and lyr.id() not in ids and hasattr(lyr, "geometryType") and \
+                        lyr.geometryType() == Qgis.GeometryType.Line:
+                    out.append((self._dhLabel(lyr.id()), lyr.id()))
+                    ids.add(lyr.id())
         return out
 
     def _fillDhLayers(self):
@@ -4175,8 +4565,10 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
     def _dhLayerChosen(self, *_):
         lid = self.cbDhLayer.currentData()
         if lid is None:
-            if getattr(self, "drillLayerId", None):
-                self.clearDrill()
+            self._saveDhStyle()
+            self.drillLayerId = None
+            self.lblDrill.setText("Pick a drillhole layer - or click one in the list above")
+            self.lblDhLegend.setText("")
             return
         if lid == getattr(self, "drillLayerId", None):
             return
@@ -4231,32 +4623,42 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             legend, colour = TB.classes(field, [v for _a, _b, v, _h in ivs]) if field else ([], lambda v: "#c060ff")
             spec = TB.tube_spec([(a, b) for a, b, _v, _h in ivs], [colour(v) for _a, _b, v, _h in ivs],
                                 self.spDhRad.value())
-            self.hook.setTubes("drill", spec)
+            self.hook.setTubes(self._dk(), spec)
             legend_html = " ".join(f"<span style='color:{c}'>■</span> {_H.escape(str(lab))}" for lab, c in legend)
             # the snap lines stay (they snap) but in dark grey, so the tube colours read
-            self.hook.setOverlay("drill", polyline_payload(layer_polylines(layer, self.canvas.mapSettings().destinationCrs()),
-                                                           "#3a3a3a", snap="ends", point_size=0))
+            self.hook.setOverlay(self._dk(), polyline_payload(layer_polylines(layer, self.canvas.mapSettings().destinationCrs()),
+                                                              "#3a3a3a", snap="ends", point_size=0))
         else:
-            self.hook.setTubes("drill", None)
-            self.hook.setOverlay("drill", polyline_payload(layer_polylines(layer, self.canvas.mapSettings().destinationCrs()),
-                                                           DRILL_COLOR, snap="ends", point_size=4))
+            self.hook.setTubes(self._dk(), None)
+            self.hook.setOverlay(self._dk(), polyline_payload(layer_polylines(layer, self.canvas.mapSettings().destinationCrs()),
+                                                              DRILL_COLOR, snap="ends", point_size=4))
         holes, grades = TB.label_specs(ivs, field if self.cbDhGrade.isChecked() else None, groups=groups)
-        self.hook.setLabels("drillIds", {"items": holes, "size": 11} if self.cbDhIds.isChecked() and holes else None)
-        self.hook.setLabels("drillVals", {"items": grades, "size": 10} if grades else None)
+        self.hook.setLabels(f"drillIds:{self.drillLayerId}",
+                            {"items": holes, "size": 11} if self.cbDhIds.isChecked() and holes else None)
+        self.hook.setLabels(f"drillVals:{self.drillLayerId}", {"items": grades, "size": 10} if grades else None)
         self.lblDhLegend.setText((f"<b>{_H.escape(field)}</b>: " if field else "") + legend_html +
                                  ("" if hole_field or not self.cbDhIds.isChecked() else
                                   "<br>No hole ID field found in this layer."))
+        self._saveDhStyle()
 
-    def clearDrill(self):
-        getattr(self, "imports", {}).pop("drill", None)
-        self.hook.setOverlay("drill", None)
-        self.hook.setTubes("drill", None)
-        self.hook.setLabels("drillIds", None)
-        self.hook.setLabels("drillVals", None)
-        self.lblDhLegend.setText("")
-        self.drillLayerId = None
-        self.lblDrill.setText("Pick a drillhole layer - or click one in the list above")
+    def clearDrill(self, lid=None):
+        """Take one drillhole layer (default: the one picked in Drillholes) out of the 3D view."""
+        lid = lid if isinstance(lid, str) and lid else getattr(self, "drillLayerId", None)
+        if not lid:
+            return
+        key = self._dk(lid)
+        getattr(self, "imports", {}).pop(key, None)
+        getattr(self, "_dhStyles", {}).pop(lid, None)
+        self.hook.setOverlay(key, None)
+        self.hook.setTubes(key, None)
+        self.hook.setLabels(f"drillIds:{lid}", None)
+        self.hook.setLabels(f"drillVals:{lid}", None)
+        if lid == getattr(self, "drillLayerId", None):
+            self.lblDhLegend.setText("")
+            self.drillLayerId = None
+            self.lblDrill.setText("Pick a drillhole layer - or click one in the list above")
         self._fillDhLayers()
+        self._fillWfList()
 
     # ------------------------------------------------------------- cleanup
     def _projectCleared(self):
@@ -4279,6 +4681,7 @@ class Q2T4Dock(ToolsMixin, LeapfrogMixin, QDockWidget):
             self.imports = {}
             self.bm, self.bmId = None, None
             self.drillLayerId = None
+            self._dhStyles = {}
             self._q2tPinned = []
             self._hiddenStrings = set()
             self.baseSection = None

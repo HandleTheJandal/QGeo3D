@@ -19,19 +19,57 @@ def _b64(a):
     return base64.b64encode(np.ascontiguousarray(a).tobytes()).decode("ascii")
 
 
+NO_DATA = {"", "NS", "N/S", "NA", "N/A", "NR", "ND", "NULL", "NONE", "NAN", "IS", "LNR"}
+
+
+def _num(v):
+    """A number from a value: numbers, numeric text ("0.12", "1,250"), below-detection text ("<0.01"
+    and "-" -> 0) and over-limit text (">10" -> 10). Negative numbers stay as they are. None for blanks, "NS" and other text."""
+    if isinstance(v, bool):
+        return None
+    if isinstance(v, (int, float)):
+        return None if v != v else float(v)
+    t = str(v).strip().replace(",", "")
+    if t in ("-", "--", "---") or t.startswith("<"):
+        return 0.0                           # "-" or "<x": assayed, below detection
+    t = t.lstrip(">= ")                      # ">x": over the upper limit - read as x
+    try:
+        x = float(t)
+    except ValueError:
+        return None
+    if x != x:
+        return None
+    return x
+
+
 def classes(name, values):
     """[(label, colour, test(v) -> bool)] and a function value -> colour."""
-    vals = [v for v in values if v is not None and not (isinstance(v, float) and v != v)]
-    num = vals and all(isinstance(v, (int, float)) for v in vals)
+    vals = [v for v in values if v is not None and not (isinstance(v, float) and v != v)
+            and str(v).strip().upper() not in NO_DATA]
     info = FN.grade_info(name) if name else None
+    nums = [_num(v) for v in vals]
+    good = [x for x in nums if x is not None]
+    # numeric if (nearly) every value reads as a number - a few "-" / "NS" don't make it categorical
+    num = bool(good) and (len(good) == len(vals) or (len(good) >= 0.8 * len(vals) and
+                                                     (info is not None or len(set(good)) > 12)))
+    if num:
+        vals = good
     if num and info and info["element"] == "AU":
         f = {"g/t": 1.0, "ppm": 1.0, "ppb": 1000.0, "oz/t": 1 / 34.2857}.get(info["unit"], 1.0)
         cl = [((None if lo is None else lo * f), (None if hi is None else hi * f), col, lab) for lo, hi, col, lab in AU_CLASSES]
-    elif num and len(set(vals)) > 12:
+    elif num and (len(set(vals)) > 12 or info is not None):
         a = np.asarray(vals, float)
-        qs = np.unique(np.quantile(a, np.linspace(0, 1, 7)))
-        cl = [(qs[i], qs[i + 1] if i < len(qs) - 2 else None, RAMP[min(i, 5)], f"{qs[i]:.3g} – {qs[i + 1]:.3g}")
-              for i in range(len(qs) - 1)]
+        pos = a[a > 0]
+        if len(pos) and (a <= 0).mean() > 0.05:
+            # many zeros / below detection: they get the lowest colour, the rest are split in five
+            qs = np.unique(np.quantile(pos, np.linspace(0, 1, 6)))
+            cl = [(None, qs[0], RAMP[0], "≤ 0 (below detection)")] + \
+                 [(qs[i], qs[i + 1] if i < len(qs) - 2 else None, RAMP[min(i + 1, 5)], f"{qs[i]:.3g} – {qs[i + 1]:.3g}")
+                  for i in range(len(qs) - 1)]
+        else:
+            qs = np.unique(np.quantile(a, np.linspace(0, 1, 7)))
+            cl = [(qs[i], qs[i + 1] if i < len(qs) - 2 else None, RAMP[min(i, 5)], f"{qs[i]:.3g} – {qs[i + 1]:.3g}")
+                  for i in range(len(qs) - 1)]
     else:
         cats = sorted(set(vals), key=lambda x: (str(type(x)), x))
         lut = {c: CAT_PALETTE[i % len(CAT_PALETTE)] if i < 12 else NO_VALUE for i, c in enumerate(cats)}
@@ -39,7 +77,8 @@ def classes(name, values):
         return legend, (lambda v: lut.get(v, NO_VALUE))
 
     def colour(v):
-        if v is None or (isinstance(v, float) and v != v) or not isinstance(v, (int, float)):
+        v = _num(v)
+        if v is None:
             return NO_VALUE
         for lo, hi, col, _l in cl:
             if (lo is None or v >= lo) and (hi is None or v < hi):

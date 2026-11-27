@@ -121,7 +121,7 @@ class ViewerToolbar:
         self.aQuery = self._act("query", "Query", self._query, checkable=True,
                                 tip="Click an object to see its attributes (Esc clears)")
         self.aString = self._act("string", "Digitise string", d.bDig.setChecked, checkable=True,
-                                 tip="Digitise a string into the active string layer: click points in the 3D view · Backspace "
+                                 tip="Digitise (D) a string into the active string layer: click points in the 3D view · Backspace "
                                      "undoes a point · Enter / right-click / double-click finishes the string · Esc "
                                      "cancels it (twice: stop digitising)")
         self._connect(d.bDig.toggled, lambda on: self._mirror(self.aString, on))
@@ -130,6 +130,10 @@ class ViewerToolbar:
         self.aMeasure = self._act("measure", "Measure", d.setMeasure, checkable=True,
                                   tip="Click A and B: length, bearing, plunge; a third point C gives the dip and dip "
                                       "direction of the plane A B C. Snaps like digitising. Esc ends")
+        self.aQ2tMeasure = self._act("/mActionMeasure.svg", "Measure (Qgis2threejs)", d.startQ2tMeasure,
+                                     tip="Qgis2threejs's distance measure: click the first point, then more points - "
+                                         "it shows the total length (horizontal and slope). Right-click removes the "
+                                         "last point, Esc ends")
         self.aEdit = self._act("editv", "Edit vertices", d.setEditVertices, checkable=True,
                                tip="Drag vertices of the strings (and of the wireframes selected in Objects) in 3D; "
                                    "Delete removes the vertex under the cursor; saved to the strings GeoPackage")
@@ -311,7 +315,8 @@ class ViewerToolbar:
         src = info.get("src")
         self.lblSrc.setText({"section": "on section", "surface": "surface", "block": "block", "wireframe": "wireframe",
                              "line": "drillhole / line", "vertex": "snap: string vertex",
-                             "drill": "snap: drillhole", "end": "snap: drillhole"}.get(src, f"snap: {src}" if src else ""))
+                             "drill": "snap: drillhole", "end": "snap: drillhole",
+                             "cloud": "point cloud"}.get(src, f"snap: {src}" if src else ""))
         mode = info.get("mode") or "Navigate"
         self.lblMode.setText(mode)
         self._mirror(self.aQuery, mode == "Query")

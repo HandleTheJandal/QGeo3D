@@ -47,6 +47,8 @@ class ToolsMixin:
             QApplication.clipboard().setText(txt)
             self.plugin._msg(txt + "  (copied)", Qgis.MessageLevel.Info, 8)
             log(txt)
+        elif t == "editTool":
+            self.editToolKey(ev.get("tool"))
         elif t in ("vertexMoved", "vertexDeleted"):
             self._applyVertexEdit(ev)
         elif t in ("vertexInserted", "stringCut", "stringCopy"):
@@ -109,6 +111,15 @@ class ToolsMixin:
             self.hook.js(f"Q2T4.setSnap({json.dumps(self._snapOpts())})")
         else:
             self.hook.js("window.Q2T4 && Q2T4.stopMeasure()")
+
+    def startQ2tMeasure(self, *_):
+        """Toolbar: Qgis2threejs's own measure (our Measure / dip tool is switched off first)."""
+        vt = self._vtb()
+        if vt is not None and hasattr(vt, "aMeasure") and vt.aMeasure.isChecked():
+            vt.aMeasure.setChecked(False)
+        self.hook.window(open_if_needed=True)
+        self.hook.inject()
+        self.hook.js("window.Q2T4 && Q2T4.startQ2tMeasure && Q2T4.startQ2tMeasure()")
 
     # ------------------------------------------------------------ editing
     def setEditVertices(self, on, mode="move"):
@@ -1220,7 +1231,7 @@ class ToolsMixin:
         if bm is not None and getattr(self, "bmId", None) in self.hook.blockModels:
             out.append((f"Block model {bm.name}: {bm.colorField}", [(lab, col) for lab, col, _n in bm.legend()]))
         txt = self.lblDhLegend.text() if hasattr(self, "lblDhLegend") else ""
-        if txt and "drill" in self.hook.tubes:
+        if txt and any(str(k).startswith("drill:") for k in self.hook.tubes):
             import re
             pairs = re.findall(r"color:(#[0-9a-fA-F]{6})'>■</span> ([^<]+?)(?=\s*<span|$)", txt)
             if pairs:

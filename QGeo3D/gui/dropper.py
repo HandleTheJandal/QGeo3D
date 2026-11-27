@@ -18,7 +18,8 @@ from qgis.PyQt.QtCore import QEvent, QObject, QTimer
 MINING = {".tridb", ".dm", ".bmf", ".mdl", ".dtm", ".dhdb", ".str", ".dat", ".omf", ".msh"}
 WIREFRAME = {".dxf", ".obj", ".gpkg", ".shp"}
 TABLES = {".csv", ".txt", ".tsv", ".xlsx", ".xlsm", ".ods"}
-ALL = MINING | WIREFRAME | TABLES
+CLOUDS = {".las", ".laz"}                # 3D window / panel only: QGIS opens them itself on the map
+ALL = MINING | WIREFRAME | TABLES | CLOUDS
 
 
 def ext(p):

@@ -172,12 +172,26 @@ class QGeo3DPlugin:
         self.actClear = act("Clear wireframes from the 3D view", self.hook.clear)
         sep()
         self.actProtect = act("Protected folders (never written to)...", self.editProtected)
-        self.actReport = act("Report a problem…", lambda: self._report())
         from .core import gpu as _gpu
         self.actGpu = act("Automatic GPU settings", self._gpuToggled, checkable=True,
                           checked=QSettings().value(_gpu.KEY_AUTO, True, type=bool))
         self.actGpu.setToolTip("Use the high-performance graphics card for QGIS (laptops with two GPUs) and set "
                                "the 3D view's drawing resolution for the card it runs on")
+        sep()
+        # Help ▸ : questions, problem reports, shortcut keys, guide, about (links only - nothing is sent)
+        from .gui import helpmenu as _help
+        self.actHelp = QAction(_theme_icon("/mActionHelpContents.svg"), "Help", mw)
+        hm = QMenu(mw)
+        hm.addAction("Questions and ideas (GitHub Discussions)…", lambda: _help.open_url(_help.DISCUSSIONS))
+        self.actReport = hm.addAction("Report a problem…", lambda: self._report())
+        hm.addSeparator()
+        hm.addAction("Shortcut keys…", lambda: setattr(self, "_helpDlg", _help.show_shortcuts(mw)))
+        hm.addAction("User guide (README on GitHub)…", lambda: _help.open_url(_help.GUIDE))
+        hm.addAction("About QGeo 3D…", lambda: setattr(self, "_helpDlg", _help.show_about(mw)))
+        self._helpMenu = hm
+        self.actHelp.setMenu(hm)
+        self.iface.addPluginToMenu(MENU, self.actHelp)
+        self.actions.append(self.actHelp)
         self.hook.gpuWarning.connect(lambda m: self._msg(m, Qgis.MessageLevel.Warning, 15))
         if self.actGpu.isChecked():
             QTimer.singleShot(2000, self._gpuPrefer)
@@ -206,6 +220,8 @@ class QGeo3DPlugin:
         self.iface.addToolBarIcon(self.actViewer)
         m.insertAction(m.actions()[0] if m.actions() else None, self.actViewer)
         self.iface.addPluginToMenu(MENU, self.actViewer)
+        self.iface.removePluginMenu(MENU, self.actHelp)          # Help stays the last item
+        self.iface.addPluginToMenu(MENU, self.actHelp)
         # our 3D viewer button replaces Qgis2threejs' own toolbar button (its Web menu items stay);
         # Qgis2threejs may load after us, so try again once QGIS has finished starting
         self._q2tButtonHidden = None

@@ -3,7 +3,7 @@
 (function () {
 	"use strict";
 
-	var VERSION = "0.13.27";
+	var VERSION = "0.13.36";
 	if (window.Q2T4 && window.Q2T4.version === VERSION) {
 		window.Q2T4.attach();
 		return;
@@ -111,9 +111,37 @@
 	};
 
 	// Attach our group to the current scene and hook scene property changes
+	// QGeo 3D keys in Qgis2threejs's own help box (Shift+I, or its info button): added once per page
+	var HELP_ROWS = [
+		["D", "Digitise string on / off"],
+		["E / M / I / U / C", "Select / Move / Insert / Cut / Copy strings"],
+		["O", "Close the selected strings"],
+		["S", "Snapping on / off (digitising, measuring, triangles)"],
+		["T", "Trace along a string (digitising)"],
+		["Backspace / Ctrl + Z", "Undo (the last click, else the last edit)"],
+		["Enter / Right-click / Double-click", "Finish the string"],
+		["Esc", "Cancel the string (twice: stop)"],
+		["Delete", "Delete selected strings / the vertex under the cursor"],
+		["F2", "Rename the selected string"],
+		["Ctrl + Y", "Redo"],
+		["Right button + Move", "Orbit (while a QGeo 3D tool is on)"],
+		["Shift + I", "This help (I alone is Insert)"]
+	];
+	G.addHelp = function () {
+		var u = document.getElementById("usage");
+		if (!u || document.getElementById("q2t4help")) return;
+		var rows = "<tr id='q2t4help'><td colspan='2' class='star'>QGeo 3D</td></tr>";
+		HELP_ROWS.forEach(function (r) { rows += "<tr><td>" + r[0] + "</td><td>" + r[1] + "</td></tr>"; });
+		if (u.tagName === "TABLE") (u.tBodies[0] || u).insertAdjacentHTML("beforeend", rows);
+		else u.insertAdjacentHTML("afterend", "<table class='q2t4help'>" + rows + "</table>");
+		var ab = document.getElementById("about");
+		if (ab) ab.insertAdjacentHTML("beforeend", "<div>Mining tools by <a href='https://github.com/HandleTheJandal/QGeo3D'>QGeo 3D</a>.</div>");
+	};
+
 	G.attach = function () {
 		if (!window.app || !app.scene) return false;
 		var scene = app.scene;
+		try { G.addHelp(); } catch (ex) { /* page without the help box */ }
 
 		if (!G.group) {
 			G.group = new THREE.Group();
@@ -606,7 +634,27 @@
 	};
 
 	// --- event handlers (return true = handled, Q2T default suppressed)
+	// Qgis2threejs's own distance measure, started from the toolbar: the next click gives its first point
+	// (it is otherwise started from a clicked object's popup). Then Qgis2threejs takes over.
+	G.q2tMeasWait = false;
+	G.startQ2tMeasure = function () {
+		if (!window.app || !app.measure) return false;
+		if (G.meas && G.meas.active) G.stopMeasure();
+		if (app.measure.isActive && app.measure.clear) app.measure.clear();
+		G.q2tMeasWait = true;
+		status("Qgis2threejs measure: click the first point (then more points; right-click removes the last one)", 6000);
+		return true;
+	};
 	G.onCanvasClicked = function (e) {
+		if (G.q2tMeasWait) {
+			G.q2tMeasWait = false;
+			if (e.button === 0) {
+				var pi = G.pickInfo(e.clientX, e.clientY);
+				if (pi && pi.p) { app.queryTargetPosition = pi.p.clone(); app.measure.start(); }
+				else status("Nothing there to measure from - click the button again, then click on an object", 4000);
+			}
+			return true;
+		}
 		if (G.edit && G.edit.active) return true;
 		if (G.meas && G.meas.active) {
 			if (e.button === 0) G.measClick(e.clientX, e.clientY);
@@ -654,14 +702,42 @@
 		if (e["_q2t_onKeyDown"]) return;
 		e["_q2t_onKeyDown"] = true;
 		var k = e.keyCode;
-		if ((e.ctrlKey || e.metaKey) && !e.altKey && (k === 90 || k === 89)) {    // Ctrl+Z undo, Ctrl+Y / Ctrl+Shift+Z redo
-			var redo = k === 89 || e.shiftKey;
+		// Ctrl+Z and Backspace: undo (the last click of what is in progress, else the last finished edit);
+		// Ctrl+Y / Ctrl+Shift+Z redo. Backspace never deletes - Delete does.
+		var bksp = k === 8 && !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+		if (bksp) {
+			var ae0 = document.activeElement;
+			if ((ae0 && /^(INPUT|TEXTAREA|SELECT)$/.test(ae0.tagName)) ||
+					(window.app && app.measure && app.measure.isActive)) bksp = false;   // typing / Qgis2threejs measure
+		}
+		if (bksp || ((e.ctrlKey || e.metaKey) && !e.altKey && (k === 90 || k === 89))) {
+			var redo = !bksp && (k === 89 || e.shiftKey);
+			var em = G.edit && G.edit.active ? G.edit.mode : null;
 			if (!redo && G.dig.active) G.digUndo();                               // the last digitised point
 			else if (!redo && G.tri && G.tri.active && G.tri.pts.length) { G.tri.pts.pop(); G.triRedraw(); }
-			else if (!redo && G.edit && G.edit.active && G.edit.mode === "link") G.dig.events.push({type: "linkUndo"});
+			else if (!redo && (em === "link" || em === "cap")) G.dig.events.push({type: em === "cap" ? "capUndo" : "linkUndo"});
 			else G.dig.events.push({type: redo ? "redo" : "undo"});
 			e.preventDefault(); e.stopPropagation();
+			if (e.stopImmediatePropagation) e.stopImmediatePropagation();
 			return;
+		}
+		if (k === 73 && e.shiftKey && !e.ctrlKey && !e.altKey) {        // Shift+I: Qgis2threejs info (plain I = Insert)
+			try {
+				if (window.Q3D && Q3D.gui && Q3D.gui.showInfo) Q3D.gui.showInfo();                 // Qgis2threejs 2.x
+				else if (window.__qgis2threejs && __qgis2threejs.gui.showHelp) __qgis2threejs.gui.showHelp();   // 3.x
+			} catch (ex) { /* no info box in this version */ }
+			e.preventDefault(); e.stopPropagation();
+			return;
+		}
+		var TOOLKEYS = {68: "digitise", 69: "select", 77: "move", 73: "insert", 85: "cut", 67: "copy", 79: "close"};
+		if (TOOLKEYS[k] && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && (!G.dig.active || k === 68) &&
+				!(G.tri && G.tri.active) && !(G.meas && G.meas.active)) {
+			var ae = document.activeElement;
+			if (!(ae && /^(INPUT|TEXTAREA|SELECT)$/.test(ae.tagName))) {
+				G.dig.events.push({type: "editTool", tool: TOOLKEYS[k]});
+				e.preventDefault(); e.stopPropagation();
+				return;
+			}
 		}
 		if (k === 83 && !e.ctrlKey && !e.altKey && (G.dig.active || (G.meas && G.meas.active) || (G.tri && G.tri.active))) {
 			G.toggleSnap(); e.preventDefault(); e.stopPropagation(); return;                    // S
@@ -670,7 +746,7 @@
 		if (G.dig.active) {
 			if (k === 84 && !e.ctrlKey) { G.setTrace(); e.preventDefault(); e.stopPropagation(); return; }   // T
 			if (k === 13) { G.digFinish(); e.preventDefault(); e.stopPropagation(); }          // Enter
-			else if (k === 8 || k === 46) { G.digUndo(); e.preventDefault(); e.stopPropagation(); }  // Backspace/Delete
+			else if (k === 46) { e.preventDefault(); e.stopPropagation(); }        // Delete: nothing to delete mid-string
 			else if (k === 27) { G.digCancel(); e.preventDefault(); e.stopPropagation(); }     // Esc
 			return;
 		}
@@ -1276,14 +1352,44 @@
 		G.setHud();
 	};
 
+	// nearest point-cloud dot under the cursor (within tol px; the front-most wins): {p, kind: "cloud"} or null
+	G.cloudPick = function (clientX, clientY, tol) {
+		var off = offsetOf(app.renderer.domElement), sx = clientX - off.left, sy = clientY - off.top;
+		var W = app.width, H = app.height, t2 = (tol || 6) * (tol || 6), best = null, bestW = Infinity;
+		app.camera.updateMatrixWorld();
+		var vp = new THREE.Matrix4().multiplyMatrices(app.camera.projectionMatrix, invert4(app.camera.matrixWorld));
+		for (var name in G.overlays) {
+			var ov = G.overlays[name];
+			if (!ov.spec.cloud || !ov.obj.visible) continue;
+			var P = ov.obj.getObjectByName("points");
+			P.updateMatrixWorld(true);
+			var e = new THREE.Matrix4().multiplyMatrices(vp, P.matrixWorld).elements, a = P.geometry.attributes.position.array;
+			for (var i = 0, n = a.length; i < n; i += 3) {
+				var x = a[i], y = a[i + 1], z = a[i + 2];
+				var w = e[3] * x + e[7] * y + e[11] * z + e[15];
+				if (w <= 0) continue;
+				var px = ((e[0] * x + e[4] * y + e[8] * z + e[12]) / w + 1) * 0.5 * W - sx;
+				if (px * px > t2) continue;
+				var py = (1 - (e[1] * x + e[5] * y + e[9] * z + e[13]) / w) * 0.5 * H - sy;
+				var d = (e[2] * x + e[6] * y + e[10] * z + e[14]) / w;     // NDC depth: works for both camera types
+				if (px * px + py * py > t2 || d >= bestW) continue;
+				var v = new THREE.Vector3(x, y, z).applyMatrix4(P.matrixWorld);
+				if (G.insideSection && !G.insideSection(v)) continue;
+				bestW = d; best = v;
+			}
+		}
+		return best ? {p: best, kind: "cloud"} : null;
+	};
+
 	// cursor position / mode for the status bar (polled by Python)
 	G.cursor = null;
 	G._updateCursor = function (cx, cy) {
 		var now = Date.now();
 		if (G._curT && now - G._curT < 90) return;
 		G._curT = now;
-		var p = null, src = null;
+		var p = null, src = null, cp = null;
 		if (G.dig.active && G.dig.hover) { p = G.dig.hover.p; src = G.dig.hover.kind; }
+		else if ((cp = G.cloudPick(cx, cy, 5))) { p = cp.p; src = "cloud"; }
 		else {
 			var g = G.sectionGeom();
 			if (g && G.section && G.section.enabled !== false) {
@@ -1421,10 +1527,27 @@
 		if (!spec) { render(); return true; }
 
 		var pos = new Float32Array(b64ToBuffer(spec.pos));
-		var seg = new Uint32Array(b64ToBuffer(spec.seg));
-		var attr = new THREE.BufferAttribute(pos, 3);
 		var obj = new THREE.Group();
 		obj.name = "q2t4 overlay " + name;
+		if (spec.cloud) {             // point cloud (LAS): coloured dots only, no lines, no snapping
+			var cg = new THREE.BufferGeometry();
+			cg.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+			cg.setAttribute("color", new THREE.BufferAttribute(new Uint8Array(b64ToBuffer(spec.colors)), 3, true));
+			cg.computeBoundingSphere();
+			var cpts = new THREE.Points(cg, new THREE.PointsMaterial({size: spec.pointSize || 2, sizeAttenuation: false,
+				vertexColors: VCOLORS}));
+			cpts.name = "points";
+			obj.add(cpts);
+			obj.visible = spec.visible !== false;
+			G.overlays[name] = {obj: obj, spec: {offset: spec.offset, color: null, cloud: true}, pos: pos,
+				seg: new Uint32Array(0), snap: new Uint32Array(0), snapWorld: null};
+			G.group.add(obj);
+			G.updateTransforms();
+			render();
+			return true;
+		}
+		var seg = new Uint32Array(b64ToBuffer(spec.seg));
+		var attr = new THREE.BufferAttribute(pos, 3);
 
 		// Lines are drawn non-indexed (each segment's two vertices copied out): indexed LINES sharing
 		// the points' position buffer intermittently drew nothing in QtWebKit (QGIS 3 / Qgis2threejs 2.x),
@@ -2848,12 +2971,12 @@
 		else if (ev.keyCode === 113 && e.mode === "select") {                  // F2: rename the selected string
 			G.dig.events.push({type: "renameSelected"}); ev.stopPropagation(); ev.preventDefault();
 		}
-		else if ((e.mode === "link" || e.mode === "cap") && (ev.keyCode === 8 || ev.keyCode === 46)) {
+		else if ((e.mode === "link" || e.mode === "cap") && ev.keyCode === 8) {
 			G.dig.events.push({type: e.mode === "cap" ? "capUndo" : "linkUndo"}); ev.stopPropagation(); ev.preventDefault();
 		}
 		else if (e.mode === "link" && ev.keyCode === 13) { G.stopEdit(); ev.stopPropagation(); ev.preventDefault(); }
 		else if (ev.keyCode === 83 && !ev.ctrlKey && !ev.altKey) { G.toggleSnap(); ev.stopPropagation(); ev.preventDefault(); }
-		else if ((ev.keyCode === 46 || ev.keyCode === 8) && e.mode === "select") {
+		else if (ev.keyCode === 46 && e.mode === "select") {
 			var pts = selPointList(), ids = [];
 			if (pts.length) { G.dig.events.push({type: "pointsDelete", points: pts}); e.selPts = {}; }
 			else {
@@ -2862,7 +2985,7 @@
 			}
 			ev.stopPropagation(); ev.preventDefault();
 		}
-		else if ((ev.keyCode === 46 || ev.keyCode === 8) && e.hot && (!e.mode || e.mode === "move")) {
+		else if (ev.keyCode === 46 && e.hot && (!e.mode || e.mode === "move")) {
 			var it = e.items[e.hot[0]];
 			if (it.w.length > 2) {
 				G.dig.events.push({type: "vertexDeleted", id: it.id, i: e.hot[1]});
@@ -2966,7 +3089,7 @@
 	G._triKey = function (e) {
 		var k = e.keyCode;
 		if (k === 27) { G.stopTriangles(); e.preventDefault(); e.stopPropagation(); }
-		else if (k === 8 || k === 46) { G.tri.pts.pop(); G.triRedraw(); e.preventDefault(); e.stopPropagation(); }
+		else if (k === 8) { G.tri.pts.pop(); G.triRedraw(); e.preventDefault(); e.stopPropagation(); }
 	};
 
 	// ------------------------------------------------------------- delete triangles

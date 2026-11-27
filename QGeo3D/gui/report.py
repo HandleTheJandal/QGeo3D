@@ -141,8 +141,9 @@ class ReportDialog(QDialog):
         self.leWhat = QLineEdit()
         self.leWhat.setPlaceholderText("e.g. ticked a block model in the 3D layer list, then zoomed to it")
         lay.addWidget(self.leWhat)
-        lay.addWidget(QLabel(f"This report goes to <b>{REPORT_EMAIL}</b>. Nothing is sent until you send the "
-                             "email yourself - check and edit it first (it can include file and project names)."))
+        lay.addWidget(QLabel(f"Send it by email to <b>{REPORT_EMAIL}</b> (private) or as a GitHub issue (public). "
+                             "Nothing is sent until you do it yourself - check and edit it first (it can include "
+                             "file and project names)."))
         self.txt = QPlainTextEdit(diagnostics(plugin, include_error))
         self.txt.setLineWrapMode(QPlainTextEdit.LineWrapMode.NoWrap)
         f = self.txt.font()
@@ -152,9 +153,13 @@ class ReportDialog(QDialog):
         bb = QDialogButtonBox()
         bCopy = bb.addButton("Copy", QDialogButtonBox.ButtonRole.ActionRole)
         bMail = bb.addButton("Email…", QDialogButtonBox.ButtonRole.AcceptRole)
+        bIssue = bb.addButton("Open as GitHub issue…", QDialogButtonBox.ButtonRole.ActionRole)
+        bIssue.setToolTip("Start a public issue on GitHub with this report filled in (you need a GitHub account; "
+                          "check it for file or project names you'd rather not publish)")
         bb.addButton(QDialogButtonBox.StandardButton.Close)
         bCopy.clicked.connect(self.copy)
         bMail.clicked.connect(self.email)
+        bIssue.clicked.connect(self.issue)
         bb.rejected.connect(self.reject)
         lay.addWidget(bb)
         self.note = QLabel("")
@@ -180,6 +185,21 @@ class ReportDialog(QDialog):
                           "also on the clipboard." if ok else
                           f"No email program answered. The report is on the clipboard: paste it into an email to "
                           f"{REPORT_EMAIL}.")
+
+
+def _issue(self):
+    from .helpmenu import issue_url
+    body = self.text()
+    QGuiApplication.clipboard().setText(body)
+    what = self.leWhat.text().strip()
+    title = ("QGeo 3D: " + what[:80]) if what else "QGeo 3D problem"
+    ok = QDesktopServices.openUrl(QUrl(issue_url(title, "```\n" + body + "\n```")))
+    self.note.setText("Your browser should open a new GitHub issue with the report - sign in, check it and press "
+                      "Submit. The full report is also on the clipboard." if ok else
+                      "No browser answered. The report is on the clipboard.")
+
+
+ReportDialog.issue = _issue
 
 
 def show_report(plugin, include_error=True):

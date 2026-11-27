@@ -4,10 +4,10 @@ path labels that shorten instead of widening the panel, and the panel's style sh
 
 import os
 
-from qgis.PyQt.QtCore import Qt, pyqtSignal
+from qgis.PyQt.QtCore import QPoint, QRect, QSize, Qt, pyqtSignal
 from qgis.PyQt.QtGui import QIcon
-from qgis.PyQt.QtWidgets import (QFrame, QHBoxLayout, QLabel, QSizePolicy, QToolButton, QVBoxLayout,
-                                 QWidget)
+from qgis.PyQt.QtWidgets import (QFrame, QHBoxLayout, QLabel, QLayout, QSizePolicy, QToolButton,
+                                 QVBoxLayout, QWidget)
 
 ICON_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "icons")
 
@@ -38,6 +38,77 @@ def tool(icon_name, tip, slot=None, text=None, checkable=False, menu=None):
     if slot is not None:
         (b.toggled if checkable else b.clicked).connect(slot)
     return b
+
+
+class FlowLayout(QLayout):
+    """Buttons left to right, wrapping onto the next line when the panel is narrow (so a row of tools
+    never makes the panel wider than its window)."""
+
+    def __init__(self, parent=None, spacing=4):
+        super().__init__(parent)
+        self._items = []
+        self.setContentsMargins(0, 0, 0, 0)
+        self.setSpacing(spacing)
+
+    def addItem(self, item):
+        self._items.append(item)
+
+    def count(self):
+        return len(self._items)
+
+    def itemAt(self, i):
+        return self._items[i] if 0 <= i < len(self._items) else None
+
+    def takeAt(self, i):
+        return self._items.pop(i) if 0 <= i < len(self._items) else None
+
+    def expandingDirections(self):
+        return Qt.Orientation(0)
+
+    def hasHeightForWidth(self):
+        return True
+
+    def heightForWidth(self, w):
+        return self._place(QRect(0, 0, w, 0), True)
+
+    def setGeometry(self, rect):
+        super().setGeometry(rect)
+        self._place(rect, False)
+
+    def sizeHint(self):
+        w = sum(i.sizeHint().width() for i in self._items) + self.spacing() * max(0, len(self._items) - 1)
+        h = max([i.sizeHint().height() for i in self._items] or [0])
+        return QSize(w, h)
+
+    def minimumSize(self):
+        s = QSize()
+        for i in self._items:
+            s = s.expandedTo(i.minimumSize())
+        return s
+
+    def _place(self, rect, test):
+        x, y, line_h, sp = rect.x(), rect.y(), 0, self.spacing()
+        for it in self._items:
+            hint = it.sizeHint()
+            if x + hint.width() > rect.right() + 1 and line_h > 0:
+                x, y, line_h = rect.x(), y + line_h + sp, 0
+            if not test:
+                it.setGeometry(QRect(QPoint(x, y), hint))
+            x += hint.width() + sp
+            line_h = max(line_h, hint.height())
+        return y + line_h - rect.y()
+
+
+def flow(*widgets, spacing=4):
+    """A wrapping row of widgets (see FlowLayout)."""
+    w = QWidget()
+    f = FlowLayout(w, spacing)
+    for x in widgets:
+        f.addWidget(x)
+    sp = w.sizePolicy()
+    sp.setHeightForWidth(True)
+    w.setSizePolicy(sp)
+    return w
 
 
 def hrow(*items, spacing=4, stretch_at=None):
